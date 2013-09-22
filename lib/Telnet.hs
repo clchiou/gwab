@@ -23,6 +23,9 @@ rfc854_DONT     = Char.chr 254 -- DON'T
 rfc854_IAC      = Char.chr 255 -- IAC
 
 
+type Option = Int
+
+
 data Packet = Text  { getText :: String }
             | Se
             | Nop
@@ -35,12 +38,24 @@ data Packet = Text  { getText :: String }
             | El
             | GoAhead
             | Sb
-            | Will  { getOption :: Int }
-            | Wont  { getOption :: Int }
-            | Do    { getOption :: Int }
-            | Dont  { getOption :: Int }
-            | Iac   -- IAC sent as data
+            | Will  { getOption :: Option }
+            | Wont  { getOption :: Option }
+            | Do    { getOption :: Option }
+            | Dont  { getOption :: Option }
+            | Iac   { getIac :: Char } -- IAC sent as data
               deriving (Show)
+
+
+-- Network Virtual Terminal
+data Nvt = Nvt {
+    -- No states... for now
+} deriving (Show)
+
+
+negotiate :: Nvt -> Packet -> (Nvt, Maybe Packet)
+negotiate nvt (Will opt) = (nvt, Just (Dont opt))
+negotiate nvt (Do   opt) = (nvt, Just (Wont opt))
+negotiate nvt _          = (nvt, Nothing)
 
 
 serialize :: Packet -> String
@@ -60,7 +75,7 @@ serialize (Will opt)  = [rfc854_IAC, rfc854_WILL, Char.chr opt]
 serialize (Wont opt)  = [rfc854_IAC, rfc854_WONT, Char.chr opt]
 serialize (Do   opt)  = [rfc854_IAC, rfc854_DO,   Char.chr opt]
 serialize (Dont opt)  = [rfc854_IAC, rfc854_DONT, Char.chr opt]
-serialize Iac         = [rfc854_IAC, rfc854_IAC]
+serialize (Iac  _)    = [rfc854_IAC, rfc854_IAC]
 
 
 parse :: String -> [Packet]
@@ -87,7 +102,7 @@ parseCommand (iac:c:cs) =
     else if c == rfc854_EL       then El       : ps
     else if c == rfc854_GOAHEAD  then GoAhead  : ps
     else if c == rfc854_SB       then Sb       : ps
-    else if c == rfc854_IAC      then Iac      : ps
+    else if c == rfc854_IAC      then (Iac rfc854_IAC) : ps
     else case cs of
         (opt:cs') | c == rfc854_WILL -> (Will $ Char.ord opt) : ps'
                   | c == rfc854_WONT -> (Wont $ Char.ord opt) : ps'

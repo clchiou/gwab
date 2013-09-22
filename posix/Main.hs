@@ -4,6 +4,7 @@ module Main where
 
 import Control.Concurrent (forkIO, killThread)
 import Data.ByteString.Char8 as Char8 (
+        ByteString,
         null,
         pack,
         unpack)
@@ -19,7 +20,16 @@ import Network.Socket (
         socket,
         withSocketsDo)
 import Network.Socket.ByteString (recv, sendAll)
-import System.IO (hGetLine, stdin)
+import System.IO (
+        BufferMode(..),
+        hGetLine,
+        hPutChar,
+        hPutStr,
+        hPutStrLn,
+        hSetBuffering,
+        stderr,
+        stdin,
+        stdout)
 import System.IO.Unsafe (unsafeInterleaveIO)
 
 import qualified Telnet
@@ -31,8 +41,9 @@ port = 4000
 
 main :: IO ()
 main = runWithSocket $ \socket -> do
+    hSetBuffering stdout NoBuffering
     threadId <- forkIO $ keyboardInput socket
-    lazyRecvAll socket >>= procPackets socket . Telnet.parse
+    lazyRecvAll socket >>= step Telnet.Nvt socket . Telnet.parse
     killThread threadId
 
 
@@ -43,19 +54,25 @@ keyboardInput socket =
     keyboardInput socket
 
 
-procPackets :: Socket -> [Telnet.Packet] -> IO ()
-procPackets socket (p:ps) = do
+step :: Telnet.Nvt -> Socket -> [Telnet.Packet] -> IO ()
+step nvt socket (p:ps) = do
+    let (nvt', mp) = Telnet.negotiate nvt p
+    case mp of
+        Just p' -> send socket p'
+        Nothing -> return ()
     case p of
-        Telnet.Text text -> putStrLn text
-        Telnet.Will opt  -> putStrLn ("WILL " ++ show opt) >>
-                            sendAll socket (serialize (Telnet.Dont opt))
-        Telnet.Do   opt  -> putStrLn ("DO   " ++ show opt) >>
-                            sendAll socket (serialize (Telnet.Wont opt))
-        otherwise        -> putStrLn (show p)
-    procPackets socket ps
-procPackets _ _ = putStrLn "End!" >> return ()
+        Telnet.Text text -> hPutStr   stdout text
+        Telnet.Iac  iac  -> hPutChar  stdout iac
+        otherwise        -> hPutStrLn stderr (show p)
+    step nvt' socket ps
+step _ _ _ = return ()
 
 
+send :: Socket -> Telnet.Packet -> IO ()
+send socket packet = sendAll socket $ serialize packet
+
+
+serialize :: Telnet.Packet -> ByteString
 serialize = Char8.pack . Telnet.serialize
 
 
