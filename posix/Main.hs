@@ -3,8 +3,10 @@
 module Main where
 
 import Control.Concurrent (forkIO, killThread)
-import Data.ByteString.Char8 (ByteString)
-import qualified Data.ByteString.Char8 as Char8
+import Data.ByteString.Char8 as Char8 (
+        null,
+        pack,
+        unpack)
 import Network.Socket (
         Socket,
         SocketType(Stream),
@@ -16,11 +18,11 @@ import Network.Socket (
         sClose,
         socket,
         withSocketsDo)
-import Network.Socket.ByteString (sendAll, recv)
+import Network.Socket.ByteString (recv, sendAll)
 import System.IO (hGetLine, stdin)
 import System.IO.Unsafe (unsafeInterleaveIO)
 
-import Telnet
+import qualified Telnet
 
 
 host = "aardmud.org"
@@ -30,7 +32,7 @@ port = 4000
 main :: IO ()
 main = runWithSocket $ \socket -> do
     threadId <- forkIO $ keyboardInput socket
-    lazyRecvAll socket >>= procPackets socket . telnetRecv
+    lazyRecvAll socket >>= procPackets socket . Telnet.parse
     killThread threadId
 
 
@@ -41,26 +43,28 @@ keyboardInput socket =
     keyboardInput socket
 
 
-procPackets :: Socket -> [TelnetPacket] -> IO ()
+procPackets :: Socket -> [Telnet.Packet] -> IO ()
 procPackets socket (p:ps) = do
     case p of
-        TelnetText text -> putStrLn text
-        TelnetWill opt  -> putStrLn ("WILL " ++ show opt) >>
-                           sendAll socket (toByteString $ TelnetDont opt)
-        TelnetDo   opt  -> putStrLn ("DO   " ++ show opt) >>
-                           sendAll socket (toByteString $ TelnetWont opt)
-        otherwise       -> putStrLn (show p)
+        Telnet.Text text -> putStrLn text
+        Telnet.Will opt  -> putStrLn ("WILL " ++ show opt) >>
+                            sendAll socket (serialize (Telnet.Dont opt))
+        Telnet.Do   opt  -> putStrLn ("DO   " ++ show opt) >>
+                            sendAll socket (serialize (Telnet.Wont opt))
+        otherwise        -> putStrLn (show p)
     procPackets socket ps
 procPackets _ _ = putStrLn "End!" >> return ()
 
 
-lazyRecvAll :: Socket -> IO [ByteString]
+serialize = Char8.pack . Telnet.serialize
+
+
+lazyRecvAll :: Socket -> IO String
 lazyRecvAll socket = unsafeInterleaveIO $
-    recv socket 1024 >>= \bs ->
-    if Char8.null bs
-    then sClose socket >> return []
-    else do lazyRest <- lazyRecvAll socket
-            return (bs:lazyRest)
+    recv socket 1024 >>= \s ->
+    if Char8.null s
+    then sClose socket >> return ""
+    else lazyRecvAll socket >>= return . ((unpack s) ++)
 
 
 runWithSocket :: (Socket -> IO a) -> IO a
