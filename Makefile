@@ -3,15 +3,15 @@ LIB = $(TOP)/lib
 OUT ?= $(TOP)/out
 
 export LIB
-export OUT
 
-all: | $(OUT)
-	$(MAKE) -C posix
+all: | $(OUT)/posix $(OUT)/chrome
+	OUT=$(OUT)/posix $(MAKE) -C posix
+	OUT=$(OUT)/chrome $(MAKE) -C chrome
 
 clean:
 	rm -rf $(OUT)
 
-$(OUT) :
+$(OUT)/posix $(OUT)/chrome :
 	mkdir -p $@
 
 .PHONY: all

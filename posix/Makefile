@@ -1,6 +1,7 @@
 GWAB := $(OUT)/gwab
+ARGS := -outputdir $(OUT) -i$(LIB)
 
 all: $(GWAB)
 
 $(GWAB) : Main.hs
-	ghc -o $@ -odir $(OUT) -hidir $(OUT) -i$(LIB) --make Main.hs
+	ghc $(ARGS) -o $@ --make $<
