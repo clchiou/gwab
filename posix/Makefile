@@ -1,7 +1,7 @@
 GWAB := $(OUT)/gwab
 ARGS := -outputdir $(OUT) -i$(LIB)
 
-all: $(GWAB)
+all:
+	ghc $(ARGS) -o $(GWAB) --make Main.hs
 
-$(GWAB) : Main.hs
-	ghc $(ARGS) -o $@ --make $<
+.PHONY: all

@@ -11,3 +11,5 @@ all: $(GWAB)
 # provide a option for this).
 $(GWAB) : Main.hs
 	cd $(OUT) ; $(HASTEC) $(ARGS) --out=$@ --make $(MAIN)
+
+.PHONY: all
