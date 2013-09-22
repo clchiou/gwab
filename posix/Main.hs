@@ -27,6 +27,7 @@ import System.IO (
         hPutStr,
         hPutStrLn,
         hSetBuffering,
+        hSetEcho,
         stderr,
         stdin,
         stdout)
@@ -43,7 +44,7 @@ main :: IO ()
 main = runWithSocket $ \socket -> do
     hSetBuffering stdout NoBuffering
     threadId <- forkIO $ keyboardInput socket
-    lazyRecvAll socket >>= step Telnet.Nvt socket . Telnet.parse
+    lazyRecvAll socket >>= step Telnet.defaultNvt socket . Telnet.parse
     killThread threadId
 
 
@@ -56,14 +57,18 @@ keyboardInput socket =
 
 step :: Telnet.Nvt -> Socket -> [Telnet.Packet] -> IO ()
 step nvt socket (p:ps) = do
-    let (nvt', mp) = Telnet.negotiate nvt p
-    case mp of
-        Just p' -> send socket p'
-        Nothing -> return ()
     case p of
         Telnet.Text text -> hPutStr   stdout text
         Telnet.Iac  iac  -> hPutChar  stdout iac
-        otherwise        -> hPutStrLn stderr (show p)
+        otherwise        -> hPutStrLn stderr ("< " ++ (show p))
+    let (nvt', mp) = Telnet.negotiate nvt p
+    hPutStrLn stderr (show nvt')
+    case mp of
+        Just p' -> hPutStrLn stderr ("> " ++ (show p')) >> send socket p'
+        Nothing -> return ()
+    if Telnet.getEcho nvt /= Telnet.getEcho nvt'
+    then hSetEcho stdout (not $ Telnet.getEcho nvt')
+    else return ()
     step nvt' socket ps
 step _ _ _ = return ()
 

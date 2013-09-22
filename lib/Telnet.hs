@@ -26,6 +26,9 @@ rfc854_IAC      = Char.chr 255 -- IAC
 type Option = Int
 
 
+rfc857_ECHO     = 1 :: Option
+
+
 data Packet = Text  { getText :: String }
             | Se
             | Nop
@@ -48,14 +51,40 @@ data Packet = Text  { getText :: String }
 
 -- Network Virtual Terminal
 data Nvt = Nvt {
-    -- No states... for now
+    getEcho :: Bool
 } deriving (Show)
 
 
+defaultNvt = Nvt {
+    getEcho = False -- Default: WON'T ECHO
+}
+
+
 negotiate :: Nvt -> Packet -> (Nvt, Maybe Packet)
-negotiate nvt (Will opt) = (nvt, Just (Dont opt))
-negotiate nvt (Do   opt) = (nvt, Just (Wont opt))
+negotiate nvt p@(Will _) = negotiate' nvt p
+negotiate nvt p@(Do   _) = negotiate' nvt p
+negotiate nvt p@(Wont _) = negotiate' nvt p
+negotiate nvt p@(Dont _) = negotiate' nvt p
 negotiate nvt _          = (nvt, Nothing)
+
+
+negotiate' :: Nvt -> Packet -> (Nvt, Maybe Packet)
+negotiate' nvt p =
+    let opt = getOption p
+    in if opt == rfc857_ECHO
+    then negotiateEcho nvt p
+    else case p of -- Unsupported option; refuse/ignore it
+        (Will opt) -> (nvt, Just (Dont opt))
+        (Do   opt) -> (nvt, Just (Wont opt))
+        _          -> (nvt, Nothing)
+
+
+negotiateEcho :: Nvt -> Packet -> (Nvt, Maybe Packet)
+negotiateEcho nvt (Will _) = (nvt {getEcho = True},  Just (Do   rfc857_ECHO))
+negotiateEcho nvt (Do   _) = (nvt, Nothing)
+negotiateEcho nvt (Wont _) = (nvt {getEcho = False}, Just (Dont rfc857_ECHO))
+negotiateEcho nvt (Dont _) = (nvt, Nothing)
+negotiateEcho nvt p        = error ("Impossible packet value: " ++ show p)
 
 
 serialize :: Packet -> String
