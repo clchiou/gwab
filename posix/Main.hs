@@ -7,6 +7,7 @@ import Data.ByteString.Char8 as Char8 (
         ByteString,
         null,
         pack,
+        singleton,
         unpack)
 import Network.Socket (
         Socket,
@@ -19,10 +20,13 @@ import Network.Socket (
         sClose,
         socket,
         withSocketsDo)
-import Network.Socket.ByteString (recv, sendAll)
+import Network.Socket.ByteString (
+        recv,
+        send,
+        sendAll)
 import System.IO (
         BufferMode(..),
-        hGetLine,
+        hGetChar,
         hPutChar,
         hPutStr,
         hPutStrLn,
@@ -42,6 +46,7 @@ port = 4000
 
 main :: IO ()
 main = runWithSocket $ \socket -> do
+    hSetBuffering stdin  NoBuffering
     hSetBuffering stdout NoBuffering
     threadId <- forkIO $ keyboardInput socket
     lazyRecvAll socket >>= step Telnet.defaultNvt socket . Telnet.parse
@@ -50,8 +55,7 @@ main = runWithSocket $ \socket -> do
 
 keyboardInput :: Socket -> IO ()
 keyboardInput socket =
-    hGetLine stdin >>=
-    sendAll socket . Char8.pack . (++ "\n") >>
+    hGetChar stdin >>= send socket . Char8.singleton >>
     keyboardInput socket
 
 
@@ -64,7 +68,7 @@ step nvt socket (p:ps) = do
     let (nvt', mp) = Telnet.negotiate nvt p
     hPutStrLn stderr (show nvt')
     case mp of
-        Just p' -> hPutStrLn stderr ("> " ++ (show p')) >> send socket p'
+        Just p' -> hPutStrLn stderr ("> " ++ (show p')) >> sendPacket socket p'
         Nothing -> return ()
     if Telnet.getEcho nvt /= Telnet.getEcho nvt'
     then hSetEcho stdout (not $ Telnet.getEcho nvt')
@@ -73,8 +77,8 @@ step nvt socket (p:ps) = do
 step _ _ _ = return ()
 
 
-send :: Socket -> Telnet.Packet -> IO ()
-send socket packet = sendAll socket $ serialize packet
+sendPacket :: Socket -> Telnet.Packet -> IO ()
+sendPacket socket packet = sendAll socket $ serialize packet
 
 
 serialize :: Telnet.Packet -> ByteString
