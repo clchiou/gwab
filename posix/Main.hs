@@ -30,6 +30,7 @@ import System.IO (
         hPutChar,
         hPutStr,
         hPutStrLn,
+        hSetBinaryMode,
         hSetBuffering,
         hSetEcho,
         stderr,
@@ -46,6 +47,8 @@ main = do
     args <- getArgs
     let host = args !! 0
     let port = args !! 1
+    hSetBinaryMode stdin  True
+    hSetBinaryMode stdout True
     hSetBuffering stdin  NoBuffering
     hSetBuffering stdout NoBuffering
     runWithSocket host port $ \socket -> do
