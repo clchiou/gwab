@@ -35,19 +35,20 @@ import System.IO (
         stderr,
         stdin,
         stdout)
+import System.Environment (getArgs)
 import System.IO.Unsafe (unsafeInterleaveIO)
 
 import qualified Telnet
 
 
-host = "aardmud.org"
-port = 4000
-
-
 main :: IO ()
-main = runWithSocket $ \socket -> do
+main = do
+    args <- getArgs
+    let host = args !! 0
+    let port = args !! 1
     hSetBuffering stdin  NoBuffering
     hSetBuffering stdout NoBuffering
+    runWithSocket host port $ \socket -> do
     threadId <- forkIO $ keyboardInput socket
     lazyRecvAll socket >>= step Telnet.defaultNvt socket . Telnet.parse
     killThread threadId
@@ -93,9 +94,9 @@ lazyRecvAll socket = unsafeInterleaveIO $
     else lazyRecvAll socket >>= return . ((unpack s) ++)
 
 
-runWithSocket :: (Socket -> IO a) -> IO a
-runWithSocket proc = withSocketsDo $ do
-    addrInfos <- getAddrInfo Nothing (Just host) (Just $ show port)
+runWithSocket :: String -> String -> (Socket -> IO a) -> IO a
+runWithSocket host port proc = withSocketsDo $ do
+    addrInfos <- getAddrInfo Nothing (Just host) (Just port)
     let serverAddr = head addrInfos
     sock <- socket (addrFamily serverAddr) Stream defaultProtocol
     connect sock (addrAddress serverAddr)
