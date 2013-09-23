@@ -26,7 +26,9 @@ rfc854_IAC      = Char.chr 255 -- IAC
 type Option = Int
 
 
-rfc857_ECHO     = 1 :: Option
+rfc856_BINARY_TRANSMISSION = 0 :: Option
+rfc857_ECHO                = 1 :: Option
+rfc858_SUPPRESS_GOAHEAD    = 3 :: Option
 
 
 data Packet = Text  { getText :: String }
@@ -46,17 +48,23 @@ data Packet = Text  { getText :: String }
             | Do    { getOption :: Option }
             | Dont  { getOption :: Option }
             | Iac   { getIac :: Char } -- IAC sent as data
+            -- Sub-option between SB and SE
+            | SubOption { getSubOption :: String }
               deriving (Show)
 
 
 -- Network Virtual Terminal
 data Nvt = Nvt {
-    getEcho :: Bool
-} deriving (Show)
+    getBinary     :: Bool,
+    getEcho       :: Bool,
+    getSupGoAhead :: Bool
+} deriving (Eq, Show)
 
 
 defaultNvt = Nvt {
-    getEcho = False -- Default: WON'T ECHO
+    getBinary     = True,  -- Binary transmission mode; This is unorthodox...
+    getEcho       = False, -- Won't ECHO
+    getSupGoAhead = True   -- Suppress GOAHEAD; This is unorthodox...
 }
 
 
@@ -68,23 +76,54 @@ negotiate nvt p@(Dont _) = negotiate' nvt p
 negotiate nvt _          = (nvt, Nothing)
 
 
+negotiators :: [(Option, Nvt -> Packet -> (Nvt, Maybe Packet))]
+negotiators = [
+    (rfc856_BINARY_TRANSMISSION, negotiateBinary),
+    (rfc857_ECHO,                negotiateEcho),
+    (rfc858_SUPPRESS_GOAHEAD,    negotiateSupGoAhead)]
+
+
 negotiate' :: Nvt -> Packet -> (Nvt, Maybe Packet)
 negotiate' nvt p =
-    let opt = getOption p
-    in if opt == rfc857_ECHO
-    then negotiateEcho nvt p
-    else case p of -- Unsupported option; refuse/ignore it
-        (Will opt) -> (nvt, Just (Dont opt))
-        (Do   opt) -> (nvt, Just (Wont opt))
-        _          -> (nvt, Nothing)
+    case lookup (getOption p) negotiators of
+        Just negotiator -> negotiator nvt p
+        Nothing         -> negotiatorNone
+    where negotiatorNone = -- Respond to unsupported options
+            case p of
+                (Will opt) -> (nvt, Just (Dont opt))
+                (Do   opt) -> (nvt, Just (Wont opt))
+                (Wont opt) -> (nvt, Just (Dont opt))
+                (Dont opt) -> (nvt, Just (Wont opt))
+
+
+negotiateBinary :: Nvt -> Packet -> (Nvt, Maybe Packet)
+negotiateBinary nvt (Will _) = (nvt {getBinary = True},
+                                Just (Do   rfc856_BINARY_TRANSMISSION))
+negotiateBinary nvt (Do   _) = (nvt {getBinary = True},
+                                Just (Will rfc856_BINARY_TRANSMISSION))
+negotiateBinary nvt (Wont _) = (nvt {getBinary = False},
+                                Just (Dont rfc856_BINARY_TRANSMISSION))
+negotiateBinary nvt (Dont _) = (nvt {getBinary = False},
+                                Just (Wont rfc856_BINARY_TRANSMISSION))
 
 
 negotiateEcho :: Nvt -> Packet -> (Nvt, Maybe Packet)
 negotiateEcho nvt (Will _) = (nvt {getEcho = True},  Just (Do   rfc857_ECHO))
-negotiateEcho nvt (Do   _) = (nvt, Nothing)
+negotiateEcho nvt (Do   _) = (nvt {getEcho = True},  Just (Will rfc857_ECHO))
 negotiateEcho nvt (Wont _) = (nvt {getEcho = False}, Just (Dont rfc857_ECHO))
-negotiateEcho nvt (Dont _) = (nvt, Nothing)
-negotiateEcho nvt p        = error ("Impossible packet value: " ++ show p)
+negotiateEcho nvt (Dont _) = (nvt {getEcho = False}, Just (Wont rfc857_ECHO))
+
+
+-- XXX: This is wrong! We do not honor GoAhead at all.
+negotiateSupGoAhead :: Nvt -> Packet -> (Nvt, Maybe Packet)
+negotiateSupGoAhead nvt (Will _) = (nvt {getSupGoAhead = True},
+                                    Just (Do   rfc858_SUPPRESS_GOAHEAD))
+negotiateSupGoAhead nvt (Do   _) = (nvt {getSupGoAhead = True},
+                                    Just (Will rfc858_SUPPRESS_GOAHEAD))
+negotiateSupGoAhead nvt (Wont _) = (nvt {getSupGoAhead = False},
+                                    Just (Dont rfc858_SUPPRESS_GOAHEAD))
+negotiateSupGoAhead nvt (Dont _) = (nvt {getSupGoAhead = False},
+                                    Just (Wont rfc858_SUPPRESS_GOAHEAD))
 
 
 serialize :: Packet -> String
@@ -105,6 +144,7 @@ serialize (Wont opt)  = [rfc854_IAC, rfc854_WONT, Char.chr opt]
 serialize (Do   opt)  = [rfc854_IAC, rfc854_DO,   Char.chr opt]
 serialize (Dont opt)  = [rfc854_IAC, rfc854_DONT, Char.chr opt]
 serialize (Iac  _)    = [rfc854_IAC, rfc854_IAC]
+serialize (SubOption opt) = opt
 
 
 parse :: String -> [Packet]
@@ -130,7 +170,7 @@ parseCommand (iac:c:cs) =
     else if c == rfc854_EC       then Ec       : ps
     else if c == rfc854_EL       then El       : ps
     else if c == rfc854_GOAHEAD  then GoAhead  : ps
-    else if c == rfc854_SB       then Sb       : ps
+    else if c == rfc854_SB       then Sb       : parseSubOption cs
     else if c == rfc854_IAC      then (Iac rfc854_IAC) : ps
     else case cs of
         (opt:cs') | c == rfc854_WILL -> (Will $ Char.ord opt) : ps'
@@ -142,3 +182,12 @@ parseCommand (iac:c:cs) =
         _ -> error "Could not recognize command format"
     where ps = parse cs
 parseCommand _ = []
+
+
+-- XXX: This function does not handle IAC-as-data in sub-option and is thus
+--      incorrect.  You should rewrite the whole parser later.
+parseSubOption :: String -> [Packet]
+parseSubOption cs@(_:_) =
+    let (subopt, command) = span (/= rfc854_IAC) cs
+    in (SubOption subopt) : parseCommand command
+parseSubOption _ = []
