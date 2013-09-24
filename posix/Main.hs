@@ -54,7 +54,7 @@ main = do
     -- Setup stdin/stdout
     hSetBuffering stdin  NoBuffering
     hSetBuffering stdout NoBuffering
-    if Telnet.getBinary nvt0
+    if Telnet.binaryMode nvt0
     then hSetBinaryMode stdin  True >>
          hSetBinaryMode stdout True
     else return ()
@@ -75,9 +75,8 @@ step :: Telnet.Nvt -> Socket -> [Telnet.Packet] -> IO ()
 step nvt socket (p:ps) = do
     let (nvt', mp) = Telnet.negotiate nvt p
     case p of
-        Telnet.Text text -> hPutStr   stdout text
-        Telnet.Iac  iac  -> hPutChar  stdout iac
-        otherwise        -> hPutStrLn stderr ("< " ++ (show p))
+        Telnet.PacketText text -> hPutStr   stdout text
+        otherwise              -> hPutStrLn stderr ("< " ++ (show p))
 
     -- Debug output
     case mp of
@@ -86,12 +85,12 @@ step nvt socket (p:ps) = do
     if nvt /= nvt' then hPutStrLn stderr (show nvt') else return ()
 
     -- Put new state into effect...
-    if Telnet.getBinary nvt /= Telnet.getBinary nvt'
-    then hSetBinaryMode stdin  (Telnet.getBinary nvt') >>
-         hSetBinaryMode stdout (Telnet.getBinary nvt')
+    if Telnet.binaryMode nvt /= Telnet.binaryMode nvt'
+    then hSetBinaryMode stdin  (Telnet.binaryMode nvt') >>
+         hSetBinaryMode stdout (Telnet.binaryMode nvt')
     else return ()
-    if Telnet.getEcho nvt /= Telnet.getEcho nvt'
-    then hSetEcho stdout (not $ Telnet.getEcho nvt')
+    if Telnet.echo nvt /= Telnet.echo nvt'
+    then hSetEcho stdout (not $ Telnet.echo nvt')
     else return ()
 
     step nvt' socket ps
