@@ -2,6 +2,9 @@
 
 module Telnet where
 
+import PacketFilter
+import Utils
+
 
 type Command = Char
 type Option  = Char
@@ -84,7 +87,7 @@ filterTelnet =
           return $ makepkt opt)
          `mplus`
          (matchByte rfc854_SB >>
-          spanByte (/= rfc854_IAC) >>= \subopt ->
+          spanIac >>= \subopt ->
           matchByte rfc854_IAC >>
           matchByte rfc854_SE >>
           (return $ PacketSubOption subopt))
@@ -95,10 +98,11 @@ filterTelnet =
          (getByte >>= \c ->
           fail $ "Could not parse command: " ++ [c])))
     `mplus`
-    (spanByte (/= rfc854_IAC) >>= \text ->
+    (spanIac >>= \text ->
      if null text
      then fail "Empty text"
      else return $ PacketText text)
+    where spanIac = withInput $ span_ (/= rfc854_IAC)
 
 
 singletons :: [(Command, Packet)]
@@ -120,89 +124,6 @@ negotiations = [
     (rfc854_WONT, PacketWont),
     (rfc854_DO,   PacketDo),
     (rfc854_DONT, PacketDont)]
-
-
-data PacketFilterState = PacketFilterState {
-    input :: String
-} deriving (Show)
-
-
-newtype PacketFilter resultType = PacketFilter {
-    run :: PacketFilterState -> Maybe (PacketFilterState, resultType)
-}
-
-
-runFilter :: PacketFilter resultType -> String -> Maybe (resultType, String)
-runFilter packetFilter inputString =
-    case run packetFilter (PacketFilterState inputString) of
-        Just (state, result) -> Just (result, input state)
-        Nothing              -> Nothing
-
-
-instance Monad PacketFilter where
-    return result  = PacketFilter (\state -> Just (state, result))
-    fail   message = PacketFilter (\_ -> Nothing)
-    filter0 >>= makeFilter1 = PacketFilter chainedFilter
-        where chainedFilter state0 =
-                case run filter0 state0 of
-                    Just (state1, result) -> run (makeFilter1 result) state1
-                    Nothing               -> Nothing
-
-
-mzero :: PacketFilter resultType
-mzero = PacketFilter (\_ -> Nothing)
-
-
-mplus :: PacketFilter resultType -> PacketFilter resultType ->
-         PacketFilter resultType
-mplus filter0 filter1 = PacketFilter chainedFilter
-    where chainedFilter state0 =
-            case run filter0 state0 of
-                success@(Just _) -> success
-                Nothing          -> run filter1 state0
-
-
-getState :: PacketFilter PacketFilterState
-getState = PacketFilter (\state -> Just (state, state))
-
-
-putState :: PacketFilterState -> PacketFilter ()
-putState state = PacketFilter (\_ -> Just (state, ()))
-
-
-getByte :: PacketFilter Char
-getByte =
-    getState >>= \state ->
-    case input state of
-        (c:cs) -> putState state { input = cs } >>= \_ -> return c
-        _      -> fail "No more input"
-
-
-spanByte ::  (Char -> Bool) -> PacketFilter String
-spanByte pred =
-    getState >>= \state ->
-    let (prefix, suffix) = span pred (input state)
-    in putState state { input = suffix } >>= \_ -> return prefix
-
-
-matchByte :: Char -> PacketFilter ()
-matchByte expChar =
-    getByte >>= \c ->
-    if expChar == c
-    then return ()
-    else fail ("Expect " ++ [expChar] ++ " but got " ++ [c])
-
-
-matchByteTable :: [(Char, result)] -> PacketFilter result
-matchByteTable table =
-    getByte >>= \c ->
-    case lookup c table of
-        Just result -> return result
-        Nothing     -> fail ("Could not match " ++ [c])
-
-
-putPacket :: Packet -> PacketFilter Packet
-putPacket packet = PacketFilter (\state -> Just (state, packet))
 
 
 negotiate :: Nvt -> Packet -> (Nvt, Maybe Packet)
