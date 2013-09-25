@@ -7,6 +7,8 @@ module Utils (
     span_ -- TODO: Remove this and use Regex
 ) where
 
+import Control.Monad
+
 import StringFilter
 
 
@@ -34,7 +36,7 @@ matchByte expChar =
     getByte >>= \c ->
     if expChar == c
     then return ()
-    else fail ("Expect " ++ [expChar] ++ " but got " ++ [c])
+    else mzero
 
 
 matchByteTable :: [(Char, result)] -> StringFilter result
@@ -42,4 +44,4 @@ matchByteTable table =
     getByte >>= \c ->
     case lookup c table of
         Just result -> return result
-        Nothing     -> fail ("Could not match " ++ [c])
+        Nothing     -> mzero
