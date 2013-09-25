@@ -67,33 +67,42 @@ defaultNvt = Nvt {
 
 -- NOTE: Errors of input are ignored; we shift one left and keep parsing.
 parse :: String -> [Packet]
-parse input =
-    case result of
-        Just (rest, packet) -> packet : parse rest
-        Nothing             -> if null input
-                               then []
-                               else parse $ tail input
-    where result =
-            (filterSingleton      ||>
-             filterNegotiation    ||>
-             filterSubNegotiation ||>
-             filterText)
-            input
+parse input@(_:_) =
+    case runFilter filterTelnet input of
+        (Just packet, rest) -> packet : parse rest
+        (Nothing,     _)    -> parse $ tail input
+parse _ = []
 
 
-type PacketFilter = String -> Maybe (String, Packet)
+filterTelnet :: PacketFilter Packet
+filterTelnet =
+    (matchByte rfc854_IAC >>
+        ( matchByteTable singletons
+         `mplus`
+         (matchByteTable negotiations >>= \makepkt ->
+          getByte >>= \opt ->
+          return $ makepkt opt)
+         `mplus`
+         (matchByte rfc854_SB >>
+          spanByte (/= rfc854_IAC) >>= \subopt ->
+          matchByte rfc854_IAC >>
+          matchByte rfc854_SE >>
+          (return $ PacketSubOption subopt))
+         `mplus`
+         (matchByte rfc854_IAC >>
+          (return $ PacketText [rfc854_IAC]))
+         `mplus`
+         (getByte >>= \c ->
+          fail $ "Could not parse command: " ++ [c])))
+    `mplus`
+    (spanByte (/= rfc854_IAC) >>= \text ->
+     if null text
+     then fail "Empty text"
+     else return $ PacketText text)
 
 
-(||>) :: PacketFilter -> PacketFilter -> PacketFilter
-(||>) f0 f1 = chained
-    where chained input =
-            case f0 input of
-                success@(Just _) -> success
-                Nothing          -> f1 input
-
-
-singletonCommands :: [(Command, Packet)]
-singletonCommands = [
+singletons :: [(Command, Packet)]
+singletons = [
     (rfc854_NOP,      PacketNop),
     (rfc854_DATAMARK, PacketDataMark),
     (rfc854_BREAK,    PacketBreak),
@@ -105,49 +114,95 @@ singletonCommands = [
     (rfc854_GOAHEAD,  PacketGoAhead)]
 
 
-filterSingleton :: PacketFilter
-filterSingleton (iac:cmd:rest)
-    | iac == rfc854_IAC = lookup cmd singletonCommands >>= \p -> Just (rest, p)
-filterSingleton _ = Nothing
-
-
-negotiationCommands :: [(Command, Option -> Packet)]
-negotiationCommands = [
+negotiations :: [(Command, Option -> Packet)]
+negotiations = [
     (rfc854_WILL, PacketWill),
     (rfc854_WONT, PacketWont),
     (rfc854_DO,   PacketDo),
     (rfc854_DONT, PacketDont)]
 
 
-filterNegotiation :: PacketFilter
-filterNegotiation (iac:cmd:opt:rest)
-    | iac == rfc854_IAC =
-        lookup cmd negotiationCommands >>= \cons -> Just (rest, cons opt)
-filterNegotiation _ = Nothing
+data PacketFilterState = PacketFilterState {
+    input :: String
+} deriving (Show)
 
 
--- TODO: Unquote IAC in sub-option string
-filterSubNegotiation :: PacketFilter
-filterSubNegotiation (iac:sb:cs)
-    | iac == rfc854_IAC && sb == rfc854_SB =
-        filterSubNegotiation' $ span (/= rfc854_IAC) cs
-filterSubNegotiation _ = Nothing
+newtype PacketFilter resultType = PacketFilter {
+    run :: PacketFilterState -> Maybe (PacketFilterState, resultType)
+}
 
 
-filterSubNegotiation' :: (String, String) -> Maybe (String, Packet)
-filterSubNegotiation' (subopt, iac:se:rest)
-    | iac == rfc854_IAC && se == rfc854_SE =
-        Just (rest, PacketSubOption subopt)
-filterSubNegotiation' _ = Nothing
+runFilter :: PacketFilter resultType -> String -> (Maybe resultType, String)
+runFilter packetFilter inputString =
+    case run packetFilter (PacketFilterState inputString) of
+        Just (state, result) -> (Just result, input state)
+        Nothing              -> (Nothing,     inputString)
 
 
--- TODO: Unquote IAC in text string
-filterText :: PacketFilter
-filterText input@(not_iac:_)
-    | not_iac /= rfc854_IAC =
-        let (text, rest) = span (/= rfc854_IAC) input
-        in Just (rest, PacketText text)
-filterText _ = Nothing
+instance Monad PacketFilter where
+    return result  = PacketFilter (\state -> Just (state, result))
+    fail   message = PacketFilter (\_ -> Nothing)
+    filter0 >>= makeFilter1 = PacketFilter chainedFilter
+        where chainedFilter state0 =
+                case run filter0 state0 of
+                    Just (state1, result) -> run (makeFilter1 result) state1
+                    Nothing               -> Nothing
+
+
+mzero :: PacketFilter resultType
+mzero = PacketFilter (\_ -> Nothing)
+
+
+mplus :: PacketFilter resultType -> PacketFilter resultType ->
+         PacketFilter resultType
+mplus filter0 filter1 = PacketFilter chainedFilter
+    where chainedFilter state0 =
+            case run filter0 state0 of
+                success@(Just _) -> success
+                Nothing          -> run filter1 state0
+
+
+getState :: PacketFilter PacketFilterState
+getState = PacketFilter (\state -> Just (state, state))
+
+
+putState :: PacketFilterState -> PacketFilter ()
+putState state = PacketFilter (\_ -> Just (state, ()))
+
+
+getByte :: PacketFilter Char
+getByte =
+    getState >>= \state ->
+    case input state of
+        (c:cs) -> putState state { input = cs } >>= \_ -> return c
+        _      -> fail "No more input"
+
+
+spanByte ::  (Char -> Bool) -> PacketFilter String
+spanByte pred =
+    getState >>= \state ->
+    let (prefix, suffix) = span pred (input state)
+    in putState state { input = suffix } >>= \_ -> return prefix
+
+
+matchByte :: Char -> PacketFilter ()
+matchByte expChar =
+    getByte >>= \c ->
+    if expChar == c
+    then return ()
+    else fail ("Expect " ++ [expChar] ++ " but got " ++ [c])
+
+
+matchByteTable :: [(Char, result)] -> PacketFilter result
+matchByteTable table =
+    getByte >>= \c ->
+    case lookup c table of
+        Just result -> return result
+        Nothing     -> fail ("Could not match " ++ [c])
+
+
+putPacket :: Packet -> PacketFilter Packet
+putPacket packet = PacketFilter (\state -> Just (state, packet))
 
 
 negotiate :: Nvt -> Packet -> (Nvt, Maybe Packet)
