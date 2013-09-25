@@ -69,8 +69,8 @@ defaultNvt = Nvt {
 parse :: String -> [Packet]
 parse input@(_:_) =
     case runFilter filterTelnet input of
-        (Just packet, rest) -> packet : parse rest
-        (Nothing,     _)    -> parse $ tail input
+        Just (packet, rest) -> packet : parse rest
+        Nothing             -> parse $ tail input
 parse _ = []
 
 
@@ -132,11 +132,11 @@ newtype PacketFilter resultType = PacketFilter {
 }
 
 
-runFilter :: PacketFilter resultType -> String -> (Maybe resultType, String)
+runFilter :: PacketFilter resultType -> String -> Maybe (resultType, String)
 runFilter packetFilter inputString =
     case run packetFilter (PacketFilterState inputString) of
-        Just (state, result) -> (Just result, input state)
-        Nothing              -> (Nothing,     inputString)
+        Just (state, result) -> Just (result, input state)
+        Nothing              -> Nothing
 
 
 instance Monad PacketFilter where
