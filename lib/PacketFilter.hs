@@ -3,9 +3,10 @@
 module PacketFilter (
     PacketFilter,
     runFilter,
-    withInput,
-    mplus -- TODO: remove this once we have MonadPlus typeclass
+    withInput
 ) where
+
+import Control.Monad
 
 
 data PacketFilterState = PacketFilterState {
@@ -27,7 +28,9 @@ runFilter packetFilter inputString =
 
 instance Monad PacketFilter where
     return result  = PacketFilter (\state -> Just (state, result))
+
     fail   message = PacketFilter (\_ -> Nothing)
+
     filter0 >>= makeFilter1 = PacketFilter chainedFilter
         where chainedFilter state0 =
                 case run filter0 state0 of
@@ -35,19 +38,14 @@ instance Monad PacketFilter where
                     Nothing               -> Nothing
 
 
--- TODO: Import MonadPlus typeclass
-mzero :: PacketFilter resultType
-mzero = PacketFilter (\_ -> Nothing)
+instance MonadPlus PacketFilter where
+    mzero = PacketFilter (\_ -> Nothing)
 
-
--- TODO: Import MonadPlus typeclass
-mplus :: PacketFilter resultType -> PacketFilter resultType ->
-         PacketFilter resultType
-mplus filter0 filter1 = PacketFilter chainedFilter
-    where chainedFilter state0 =
-            case run filter0 state0 of
-                success@(Just _) -> success
-                Nothing          -> run filter1 state0
+    mplus filter0 filter1 = PacketFilter chainedFilter
+        where chainedFilter state0 =
+                case run filter0 state0 of
+                    success@(Just _) -> success
+                    Nothing          -> run filter1 state0
 
 
 getState :: PacketFilter PacketFilterState
@@ -63,6 +61,5 @@ withInput func =
     getState >>= \state ->
     case func (input state) of
         Just (result, rest) ->
-            putState state { input = rest } >>= \_ -> return result
-        Nothing ->
-            fail "func failed"
+            putState state{input=rest} >>= \_ -> return result
+        Nothing -> mzero

@@ -2,6 +2,8 @@
 
 module Telnet where
 
+import Control.Monad
+
 import PacketFilter
 import Utils
 
