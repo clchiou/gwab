@@ -7,7 +7,7 @@ module Utils (
     span_ -- TODO: Remove this and use Regex
 ) where
 
-import PacketFilter
+import StringFilter
 
 
 -- Reverse of (:)
@@ -25,11 +25,11 @@ span_ pred seq =
     else Just (prefix, suffix)
 
 
-getByte :: PacketFilter Char
+getByte :: StringFilter Char
 getByte = withInput uncons
 
 
-matchByte :: Char -> PacketFilter ()
+matchByte :: Char -> StringFilter ()
 matchByte expChar =
     getByte >>= \c ->
     if expChar == c
@@ -37,7 +37,7 @@ matchByte expChar =
     else fail ("Expect " ++ [expChar] ++ " but got " ++ [c])
 
 
-matchByteTable :: [(Char, result)] -> PacketFilter result
+matchByteTable :: [(Char, result)] -> StringFilter result
 matchByteTable table =
     getByte >>= \c ->
     case lookup c table of

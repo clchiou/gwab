@@ -4,7 +4,7 @@ module Telnet where
 
 import Control.Monad
 
-import PacketFilter
+import StringFilter
 import Utils
 
 
@@ -79,7 +79,7 @@ parse input@(_:_) =
 parse _ = []
 
 
-filterTelnet :: PacketFilter Packet
+filterTelnet :: StringFilter Packet
 filterTelnet =
     (matchByte rfc854_IAC >>
         ( matchByteTable singletons
