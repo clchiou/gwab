@@ -28,24 +28,25 @@ instance Arbitrary Packet where
 
 main :: IO ()
 main = do
-    quickCheck prop_idempotent1
-    quickCheck prop_idempotent2
+    quickCheck prop_identity1
+    quickCheck prop_identity2
 
 
-prop_idempotent1 :: [Char] -> Bool
-prop_idempotent1 cs = (concat . map serialize . parse) quoted == quoted
+serialize' = concat . map serialize
+identity   = serialize' . parse
+
+
+prop_identity1 :: [Char] -> Bool
+prop_identity1 cs = identity quoted == quoted
     where quoted = quote cs
           quote  = replace "\255" "\255\255" -- This quotes all IAC
 
 
--- NOTE: Test idempotency for [Packet] is difficult because:
+-- NOTE: Test identity for [Packet] is difficult because:
 --   * [PacketText ""] is serialized to "" but "" is parsed to [] rather than
 --     [PacketText ""].
 --   * PacketText may be generated at different splits of input text.
--- So the easies way to test idempotency is to test on serialized text.
-prop_idempotent2 :: [Packet] -> Bool
-prop_idempotent2 ps =
-    let cs  = concat $ map serialize ps
-        ps' = parse cs
-        cs' = concat $ map serialize ps'
-    in cs == cs'
+-- So the easies way to test identity is to test on serialized text.
+prop_identity2 :: [Packet] -> Bool
+prop_identity2 ps = identity cs == cs
+    where cs = serialize' ps
