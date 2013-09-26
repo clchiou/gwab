@@ -121,27 +121,21 @@ filterTelnet =
      then fail "Empty text"
      else return $ PacketText text)
     where spanIac = withInput $ span_ (/= rfc854_IAC)
-
-
-singletons :: [(CommandCode, Packet)]
-singletons = [
-    (rfc854_NOP,      PacketNop),
-    (rfc854_DATAMARK, PacketDataMark),
-    (rfc854_BREAK,    PacketBreak),
-    (rfc854_IP,       PacketIp),
-    (rfc854_AO,       PacketAo),
-    (rfc854_AYT,      PacketAyt),
-    (rfc854_EC,       PacketEc),
-    (rfc854_EL,       PacketEl),
-    (rfc854_GOAHEAD,  PacketGoAhead)]
-
-
-negotiations :: [(CommandCode, OptionCode -> Packet)]
-negotiations = [
-    (rfc854_WILL, PacketWill),
-    (rfc854_WONT, PacketWont),
-    (rfc854_DO,   PacketDo),
-    (rfc854_DONT, PacketDont)]
+          singletons = [
+              (rfc854_NOP,      PacketNop),
+              (rfc854_DATAMARK, PacketDataMark),
+              (rfc854_BREAK,    PacketBreak),
+              (rfc854_IP,       PacketIp),
+              (rfc854_AO,       PacketAo),
+              (rfc854_AYT,      PacketAyt),
+              (rfc854_EC,       PacketEc),
+              (rfc854_EL,       PacketEl),
+              (rfc854_GOAHEAD,  PacketGoAhead)]
+          negotiations = [
+              (rfc854_WILL, PacketWill),
+              (rfc854_WONT, PacketWont),
+              (rfc854_DO,   PacketDo),
+              (rfc854_DONT, PacketDont)]
 
 
 --
