@@ -1,6 +1,15 @@
 -- Copyright (C) 2013 Che-Liang Chiou.
 
-module Telnet where
+module Telnet (
+    Packet(..),
+    parse,
+    serialize,
+
+    Nvt(..),
+    applyOption,
+    doEdgeTrigger,
+    step
+) where
 
 import Control.Monad
 
@@ -35,6 +44,11 @@ rfc857_ECHO                = '\1' :: OptionCode
 rfc858_SUPPRESS_GOAHEAD    = '\3' :: OptionCode
 
 
+--
+-- Telnet : Wire Protocol
+--
+
+
 data Packet = PacketNop
             | PacketDataMark
             | PacketBreak
@@ -53,41 +67,6 @@ data Packet = PacketNop
               deriving (Show)
 
 
-type Option = Maybe (Bool, Bool -> IO ())
-
-
--- Network Virtual Terminal
-data Nvt = Nvt {
-    -- RFC-856 Binary Transmission Mode
-    binaryMode :: Option,
-
-    -- RFC-857 ECHO
-    echo       :: Option,
-
-    -- RFC-858 Suppress GOAHEAD
-    supGoAhead :: Option
-}
-
-
-instance Eq Nvt where
-    nvt0 == nvt1 =
-        binaryMode nvt0 === binaryMode nvt1 &&
-        echo       nvt0 === echo       nvt1 &&
-        supGoAhead nvt0 === supGoAhead nvt1
-        where (===) (Just (flag0, _)) (Just (flag1, _)) = flag0 == flag1
-              (===) Nothing           Nothing           = True
-              (===) _                 _                 = False
-
-
-instance Show Nvt where
-    show nvt = "Nvt {" ++
-        "binaryMode = " ++ (show' $ binaryMode nvt) ++ ", " ++
-        "echo = "       ++ (show' $ echo       nvt) ++ ", " ++
-        "supGoAhead = " ++ (show' $ supGoAhead nvt) ++ "}"
-        where show' (Just (flag, _)) = show flag
-              show' Nothing          = "?"
-
-
 -- NOTE: Errors of input are ignored; we shift one left and keep parsing.
 parse :: String -> [Packet]
 parse input@(_:_) =
@@ -95,6 +74,25 @@ parse input@(_:_) =
         Just (packet, rest) -> packet : parse rest
         Nothing             -> parse $ tail input
 parse _ = []
+
+
+serialize :: Packet -> String
+serialize PacketNop      = [rfc854_IAC, rfc854_NOP]
+serialize PacketDataMark = [rfc854_IAC, rfc854_DATAMARK]
+serialize PacketBreak    = [rfc854_IAC, rfc854_BREAK]
+serialize PacketIp       = [rfc854_IAC, rfc854_IP]
+serialize PacketAo       = [rfc854_IAC, rfc854_AO]
+serialize PacketAyt      = [rfc854_IAC, rfc854_AYT]
+serialize PacketEc       = [rfc854_IAC, rfc854_EC]
+serialize PacketEl       = [rfc854_IAC, rfc854_EL]
+serialize PacketGoAhead  = [rfc854_IAC, rfc854_GOAHEAD]
+serialize (PacketText text)        = text
+serialize (PacketWill opt)         = [rfc854_IAC, rfc854_WILL, opt]
+serialize (PacketWont opt)         = [rfc854_IAC, rfc854_WONT, opt]
+serialize (PacketDo   opt)         = [rfc854_IAC, rfc854_DO,   opt]
+serialize (PacketDont opt)         = [rfc854_IAC, rfc854_DONT, opt]
+serialize (PacketSubOption subopt) =
+    [rfc854_IAC, rfc854_SB] ++ subopt ++ [rfc854_IAC, rfc854_SE]
 
 
 filterTelnet :: StringFilter Packet
@@ -144,6 +142,46 @@ negotiations = [
     (rfc854_WONT, PacketWont),
     (rfc854_DO,   PacketDo),
     (rfc854_DONT, PacketDont)]
+
+
+--
+-- Telnet : Network Virtual Terminal
+--
+
+
+type Option = Maybe (Bool, Bool -> IO ())
+
+
+-- Network Virtual Terminal
+data Nvt = Nvt {
+    -- RFC-856 Binary Transmission Mode
+    binaryMode :: Option,
+
+    -- RFC-857 ECHO
+    echo       :: Option,
+
+    -- RFC-858 Suppress GOAHEAD
+    supGoAhead :: Option
+}
+
+
+instance Eq Nvt where
+    nvt0 == nvt1 =
+        binaryMode nvt0 === binaryMode nvt1 &&
+        echo       nvt0 === echo       nvt1 &&
+        supGoAhead nvt0 === supGoAhead nvt1
+        where (===) (Just (flag0, _)) (Just (flag1, _)) = flag0 == flag1
+              (===) Nothing           Nothing           = True
+              (===) _                 _                 = False
+
+
+instance Show Nvt where
+    show nvt = "Nvt {" ++
+        "binaryMode = " ++ (show' $ binaryMode nvt) ++ ", " ++
+        "echo = "       ++ (show' $ echo       nvt) ++ ", " ++
+        "supGoAhead = " ++ (show' $ supGoAhead nvt) ++ "}"
+        where show' (Just (flag, _)) = show flag
+              show' Nothing          = "?"
 
 
 step :: Nvt -> Packet -> (Nvt, Maybe Packet)
@@ -196,22 +234,3 @@ doEdgeTrigger optionGetter nvt0 nvt1 =
     in case (opt0, opt1) of
         (Just (flag0, _), Just (flag1, _)) | flag0 /= flag1 -> applyOption opt1
         _                                                   -> return ()
-
-
-serialize :: Packet -> String
-serialize PacketNop      = [rfc854_IAC, rfc854_NOP]
-serialize PacketDataMark = [rfc854_IAC, rfc854_DATAMARK]
-serialize PacketBreak    = [rfc854_IAC, rfc854_BREAK]
-serialize PacketIp       = [rfc854_IAC, rfc854_IP]
-serialize PacketAo       = [rfc854_IAC, rfc854_AO]
-serialize PacketAyt      = [rfc854_IAC, rfc854_AYT]
-serialize PacketEc       = [rfc854_IAC, rfc854_EC]
-serialize PacketEl       = [rfc854_IAC, rfc854_EL]
-serialize PacketGoAhead  = [rfc854_IAC, rfc854_GOAHEAD]
-serialize (PacketText text)        = text
-serialize (PacketWill opt)         = [rfc854_IAC, rfc854_WILL, opt]
-serialize (PacketWont opt)         = [rfc854_IAC, rfc854_WONT, opt]
-serialize (PacketDo   opt)         = [rfc854_IAC, rfc854_DO,   opt]
-serialize (PacketDont opt)         = [rfc854_IAC, rfc854_DONT, opt]
-serialize (PacketSubOption subopt) =
-    [rfc854_IAC, rfc854_SB] ++ subopt ++ [rfc854_IAC, rfc854_SE]
