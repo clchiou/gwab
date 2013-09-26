@@ -21,9 +21,8 @@ newtype StringFilter resultType = StringFilter {
 
 runFilter :: StringFilter resultType -> String -> Maybe (resultType, String)
 runFilter packetFilter inputString =
-    case run packetFilter (StringFilterState inputString) of
-        Just (state, result) -> Just (result, input state)
-        Nothing              -> Nothing
+    fmap massage (run packetFilter $ StringFilterState inputString)
+    where massage (state, result) = (result, input state)
 
 
 instance Monad StringFilter where
@@ -59,7 +58,6 @@ putState state = StringFilter (\_ -> Just (state, ()))
 withInput :: (String -> Maybe (resultType, String)) -> StringFilter resultType
 withInput func =
     getState >>= \state ->
-    case func (input state) of
-        Just (result, rest) ->
-            putState state{input=rest} >>= \_ -> return result
-        Nothing -> mzero
+    case func $ input state of
+        Just (result, rest) -> putState state{input=rest} >> return result
+        Nothing             -> mzero

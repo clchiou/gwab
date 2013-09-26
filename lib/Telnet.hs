@@ -13,6 +13,7 @@ module Telnet (
 
 import Control.Monad
 
+import Platform (replace)
 import StringFilter
 import Utils
 
@@ -64,7 +65,7 @@ data Packet = PacketNop
             | PacketDo        { optionCode :: OptionCode }
             | PacketDont      { optionCode :: OptionCode }
             | PacketText      { text :: String }
-              deriving (Show)
+              deriving (Eq, Show)
 
 
 -- NOTE: Errors of input are ignored; we shift one left and keep parsing.
@@ -77,22 +78,27 @@ parse _ = []
 
 
 serialize :: Packet -> String
-serialize PacketNop      = [rfc854_IAC, rfc854_NOP]
-serialize PacketDataMark = [rfc854_IAC, rfc854_DATAMARK]
-serialize PacketBreak    = [rfc854_IAC, rfc854_BREAK]
-serialize PacketIp       = [rfc854_IAC, rfc854_IP]
-serialize PacketAo       = [rfc854_IAC, rfc854_AO]
-serialize PacketAyt      = [rfc854_IAC, rfc854_AYT]
-serialize PacketEc       = [rfc854_IAC, rfc854_EC]
-serialize PacketEl       = [rfc854_IAC, rfc854_EL]
-serialize PacketGoAhead  = [rfc854_IAC, rfc854_GOAHEAD]
-serialize (PacketText text)        = text
+serialize PacketNop                = [rfc854_IAC, rfc854_NOP]
+serialize PacketDataMark           = [rfc854_IAC, rfc854_DATAMARK]
+serialize PacketBreak              = [rfc854_IAC, rfc854_BREAK]
+serialize PacketIp                 = [rfc854_IAC, rfc854_IP]
+serialize PacketAo                 = [rfc854_IAC, rfc854_AO]
+serialize PacketAyt                = [rfc854_IAC, rfc854_AYT]
+serialize PacketEc                 = [rfc854_IAC, rfc854_EC]
+serialize PacketEl                 = [rfc854_IAC, rfc854_EL]
+serialize PacketGoAhead            = [rfc854_IAC, rfc854_GOAHEAD]
 serialize (PacketWill opt)         = [rfc854_IAC, rfc854_WILL, opt]
 serialize (PacketWont opt)         = [rfc854_IAC, rfc854_WONT, opt]
 serialize (PacketDo   opt)         = [rfc854_IAC, rfc854_DO,   opt]
 serialize (PacketDont opt)         = [rfc854_IAC, rfc854_DONT, opt]
-serialize (PacketSubOption subopt) =
-    [rfc854_IAC, rfc854_SB] ++ subopt ++ [rfc854_IAC, rfc854_SE]
+serialize (PacketSubOption subopt) = [rfc854_IAC, rfc854_SB] ++
+                                     quote subopt            ++
+                                     [rfc854_IAC, rfc854_SE]
+serialize (PacketText text)        = quote text
+
+
+quote :: String -> String
+quote = replace [rfc854_IAC] [rfc854_IAC, rfc854_IAC]
 
 
 filterTelnet :: StringFilter Packet
@@ -101,11 +107,11 @@ filterTelnet =
         ( matchByteTable singletons
          `mplus`
          (matchByteTable negotiations >>= \makepkt ->
-          getByte >>= \opt ->
-          return $ makepkt opt)
+          getByte >>=
+          return . makepkt)
          `mplus`
          (matchByte rfc854_SB >>
-          spanIac >>= \subopt ->
+          readUntilIac' >>= \subopt ->
           matchByte rfc854_IAC >>
           matchByte rfc854_SE >>
           (return $ PacketSubOption subopt))
@@ -116,12 +122,9 @@ filterTelnet =
          (getByte >>= \c ->
           fail $ "Could not parse command: " ++ [c])))
     `mplus`
-    (spanIac >>= \text ->
-     if null text
-     then fail "Empty text"
-     else return $ PacketText text)
-    where spanIac = withInput $ span_ (/= rfc854_IAC)
-          singletons = [
+    (readText >>=
+     return . PacketText)
+    where singletons = [
               (rfc854_NOP,      PacketNop),
               (rfc854_DATAMARK, PacketDataMark),
               (rfc854_BREAK,    PacketBreak),
@@ -136,6 +139,30 @@ filterTelnet =
               (rfc854_WONT, PacketWont),
               (rfc854_DO,   PacketDo),
               (rfc854_DONT, PacketDont)]
+          readUntilIac' = withInput $ readUntilIac []
+          -- Text packets may be split in the middle; so we do not insist on
+          -- reading until we see the start of next command.
+          readText = getPrefix (/= rfc854_IAC)
+
+
+-- NOTE: readUntilIac is NOT lazy; it continues to read until it sees an IAC
+-- that is not sent as data, i.e., start of next command.  The non-laziness is
+-- probably only useful when parsing subnegotiation where the suboption is not
+-- complete until we see an SE command.
+--
+-- This function also unquotes IACs that are sent as data.
+readUntilIac :: String -> String -> Maybe (String, String)
+readUntilIac prefix suffix
+    | null suffix =
+        if null prefix
+        then Nothing
+        else Just (prefix, suffix)
+    | otherwise =
+        if iacSentAsData == [rfc854_IAC, rfc854_IAC]
+        then readUntilIac (prefix ++ prefix' ++ [rfc854_IAC]) suffix''
+        else Just (prefix ++ prefix', suffix')
+        where (prefix', suffix')        = span (/= rfc854_IAC) suffix
+              (iacSentAsData, suffix'') = splitAt 2 suffix'
 
 
 --

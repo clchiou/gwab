@@ -2,9 +2,9 @@
 
 module Utils (
     getByte,
+    getPrefix,
     matchByte,
     matchByteTable,
-    span_ -- TODO: Remove this and use Regex
 ) where
 
 import Control.Monad
@@ -18,17 +18,17 @@ uncons (c:cs) = Just (c, cs)
 uncons _      = Nothing
 
 
--- Maybe version of span
-span_ :: (a -> Bool) -> [a] -> Maybe ([a], [a])
-span_ pred seq =
-    let (prefix, suffix) = span pred seq
-    in if null prefix
-    then Nothing
-    else Just (prefix, suffix)
-
-
 getByte :: StringFilter Char
 getByte = withInput uncons
+
+
+getPrefix :: (Char -> Bool) -> StringFilter String
+getPrefix pred = withInput $ getPrefix' pred
+    where getPrefix' pred seq =
+            let result@(prefix, _) = span pred seq
+            in if null prefix
+            then Nothing
+            else Just result
 
 
 matchByte :: Char -> StringFilter ()
