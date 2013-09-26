@@ -8,31 +8,31 @@ import StringFilter
 import Utils
 
 
-type Command = Char
-type Option  = Char
+type CommandCode = Char
+type OptionCode  = Char
 
 
-rfc854_SE       = '\240' -- End of subnegotiation
-rfc854_NOP      = '\241' -- NOP
-rfc854_DATAMARK = '\242' -- Data Mark
-rfc854_BREAK    = '\243' -- Break
-rfc854_IP       = '\244' -- Interrupt Process
-rfc854_AO       = '\245' -- Abort output
-rfc854_AYT      = '\246' -- Are you there
-rfc854_EC       = '\247' -- Erase character
-rfc854_EL       = '\248' -- Erase line
-rfc854_GOAHEAD  = '\249' -- Go ahead
-rfc854_SB       = '\250' -- Begin of subnegotiation
-rfc854_WILL     = '\251' -- WILL
-rfc854_WONT     = '\252' -- WON'T
-rfc854_DO       = '\253' -- DO
-rfc854_DONT     = '\254' -- DON'T
-rfc854_IAC      = '\255' -- IAC
+rfc854_SE       = '\240' :: CommandCode -- End of subnegotiation
+rfc854_NOP      = '\241' :: CommandCode -- NOP
+rfc854_DATAMARK = '\242' :: CommandCode -- Data Mark
+rfc854_BREAK    = '\243' :: CommandCode -- Break
+rfc854_IP       = '\244' :: CommandCode -- Interrupt Process
+rfc854_AO       = '\245' :: CommandCode -- Abort output
+rfc854_AYT      = '\246' :: CommandCode -- Are you there
+rfc854_EC       = '\247' :: CommandCode -- Erase character
+rfc854_EL       = '\248' :: CommandCode -- Erase line
+rfc854_GOAHEAD  = '\249' :: CommandCode -- Go ahead
+rfc854_SB       = '\250' :: CommandCode -- Begin of subnegotiation
+rfc854_WILL     = '\251' :: CommandCode -- WILL
+rfc854_WONT     = '\252' :: CommandCode -- WON'T
+rfc854_DO       = '\253' :: CommandCode -- DO
+rfc854_DONT     = '\254' :: CommandCode -- DON'T
+rfc854_IAC      = '\255' :: CommandCode -- IAC
 
 
-rfc856_BINARY_TRANSMISSION = '\0' :: Option
-rfc857_ECHO                = '\1' :: Option
-rfc858_SUPPRESS_GOAHEAD    = '\3' :: Option
+rfc856_BINARY_TRANSMISSION = '\0' :: OptionCode
+rfc857_ECHO                = '\1' :: OptionCode
+rfc858_SUPPRESS_GOAHEAD    = '\3' :: OptionCode
 
 
 data Packet = PacketNop
@@ -45,29 +45,47 @@ data Packet = PacketNop
             | PacketEl
             | PacketGoAhead
             | PacketSubOption { subOption :: String }
-            | PacketWill      { option :: Option }
-            | PacketWont      { option :: Option }
-            | PacketDo        { option :: Option }
-            | PacketDont      { option :: Option }
+            | PacketWill      { optionCode :: OptionCode }
+            | PacketWont      { optionCode :: OptionCode }
+            | PacketDo        { optionCode :: OptionCode }
+            | PacketDont      { optionCode :: OptionCode }
             | PacketText      { text :: String }
               deriving (Show)
 
 
+type Option = Maybe (Bool, Bool -> IO ())
+
+
 -- Network Virtual Terminal
 data Nvt = Nvt {
-    binaryMode :: Bool, -- RFC-856 Binary Transmission Mode
-    echo       :: Bool, -- RFC-857 ECHO
-    supGoAhead :: Bool  -- RFC-858 Suppress GOAHEAD
-} deriving (Eq, Show)
+    -- RFC-856 Binary Transmission Mode
+    binaryMode :: Option,
 
+    -- RFC-857 ECHO
+    echo       :: Option,
 
--- The default value of binaryMode and supGoAhead are chosen for pratical
--- purpose, and are not the default value defined in RFC.
-defaultNvt = Nvt {
-    binaryMode = True,
-    echo       = False,
-    supGoAhead = True
+    -- RFC-858 Suppress GOAHEAD
+    supGoAhead :: Option
 }
+
+
+instance Eq Nvt where
+    nvt0 == nvt1 =
+        binaryMode nvt0 === binaryMode nvt1 &&
+        echo       nvt0 === echo       nvt1 &&
+        supGoAhead nvt0 === supGoAhead nvt1
+        where (===) (Just (flag0, _)) (Just (flag1, _)) = flag0 == flag1
+              (===) Nothing           Nothing           = True
+              (===) _                 _                 = False
+
+
+instance Show Nvt where
+    show nvt = "Nvt {" ++
+        "binaryMode = " ++ (show' $ binaryMode nvt) ++ ", " ++
+        "echo = "       ++ (show' $ echo       nvt) ++ ", " ++
+        "supGoAhead = " ++ (show' $ supGoAhead nvt) ++ "}"
+        where show' (Just (flag, _)) = show flag
+              show' Nothing          = "?"
 
 
 -- NOTE: Errors of input are ignored; we shift one left and keep parsing.
@@ -107,7 +125,7 @@ filterTelnet =
     where spanIac = withInput $ span_ (/= rfc854_IAC)
 
 
-singletons :: [(Command, Packet)]
+singletons :: [(CommandCode, Packet)]
 singletons = [
     (rfc854_NOP,      PacketNop),
     (rfc854_DATAMARK, PacketDataMark),
@@ -120,7 +138,7 @@ singletons = [
     (rfc854_GOAHEAD,  PacketGoAhead)]
 
 
-negotiations :: [(Command, Option -> Packet)]
+negotiations :: [(CommandCode, OptionCode -> Packet)]
 negotiations = [
     (rfc854_WILL, PacketWill),
     (rfc854_WONT, PacketWont),
@@ -128,70 +146,56 @@ negotiations = [
     (rfc854_DONT, PacketDont)]
 
 
-negotiate :: Nvt -> Packet -> (Nvt, Maybe Packet)
-negotiate nvt (PacketWill opt) = (nvt, Just $ PacketDont opt)
-negotiate nvt (PacketDo   opt) = (nvt, Just $ PacketWont opt)
-negotiate nvt (PacketWont opt) = (nvt, Just $ PacketDont opt)
-negotiate nvt (PacketDont opt) = (nvt, Just $ PacketWont opt)
-negotiate nvt _                = (nvt, Nothing)
-{-
-negotiate :: Nvt -> Packet -> (Nvt, Maybe Packet)
-negotiate nvt p@(Will _) = negotiate' nvt p
-negotiate nvt p@(Do   _) = negotiate' nvt p
-negotiate nvt p@(Wont _) = negotiate' nvt p
-negotiate nvt p@(Dont _) = negotiate' nvt p
-negotiate nvt _          = (nvt, Nothing)
+step :: Nvt -> Packet -> (Nvt, Maybe Packet)
+step nvt0 packet@(PacketWill _) = stepNegotiation nvt0 packet True
+step nvt0 packet@(PacketDo   _) = stepNegotiation nvt0 packet True
+step nvt0 packet@(PacketWont _) = stepNegotiation nvt0 packet False
+step nvt0 packet@(PacketDont _) = stepNegotiation nvt0 packet False
+step nvt0 _                     = (nvt0, Nothing)
 
 
-negotiators :: [(Option, Nvt -> Packet -> (Nvt, Maybe Packet))]
-negotiators = [
-    (rfc856_BINARY_TRANSMISSION, negotiateBinary),
-    (rfc857_ECHO,                negotiateEcho),
-    (rfc858_SUPPRESS_GOAHEAD,    negotiateSupGoAhead)]
+stepNegotiation :: Nvt -> Packet -> Bool -> (Nvt, Maybe Packet)
+stepNegotiation nvt0 packet flag =
+    case getOption opt >>= ($ nvt0) of
+        Nothing            -> (nvt0, Just $ nak packet)
+        Just (_, doOption) -> (setOption nvt0 opt option', Just $ ack packet)
+            where option' = Just (flag, doOption)
+    where opt = optionCode packet
+
+          getOption = flip lookup [
+                (rfc856_BINARY_TRANSMISSION, binaryMode),
+                (rfc857_ECHO,                echo),
+                (rfc858_SUPPRESS_GOAHEAD,    supGoAhead)]
+
+          setOption nvt opt option
+              | opt == rfc856_BINARY_TRANSMISSION = nvt{binaryMode=option}
+              | opt == rfc857_ECHO                = nvt{echo      =option}
+              | opt == rfc858_SUPPRESS_GOAHEAD    = nvt{supGoAhead=option}
+              | otherwise                         = undefined
+
+          ack (PacketWill opt) = PacketDo   opt
+          ack (PacketDo   opt) = PacketWill opt
+          ack (PacketWont opt) = PacketDont opt
+          ack (PacketDont opt) = PacketWont opt
+
+          nak (PacketWill opt) = PacketDont opt
+          nak (PacketDo   opt) = PacketWont opt
+          nak (PacketWont opt) = PacketDont opt
+          nak (PacketDont opt) = PacketWont opt
 
 
-negotiate' :: Nvt -> Packet -> (Nvt, Maybe Packet)
-negotiate' nvt p =
-    case lookup (getOption p) negotiators of
-        Just negotiator -> negotiator nvt p
-        Nothing         -> negotiatorNone
-    where negotiatorNone = -- Respond to unsupported options
-            case p of
-                (Will opt) -> (nvt, Just (Dont opt))
-                (Do   opt) -> (nvt, Just (Wont opt))
-                (Wont opt) -> (nvt, Just (Dont opt))
-                (Dont opt) -> (nvt, Just (Wont opt))
+applyOption :: Option -> IO ()
+applyOption (Just (flag, doOption)) = return flag >>= doOption
+applyOption Nothing                 = return ()
 
 
-negotiateBinary :: Nvt -> Packet -> (Nvt, Maybe Packet)
-negotiateBinary nvt (Will _) = (nvt {getBinary = True},
-                                Just (Do   rfc856_BINARY_TRANSMISSION))
-negotiateBinary nvt (Do   _) = (nvt {getBinary = True},
-                                Just (Will rfc856_BINARY_TRANSMISSION))
-negotiateBinary nvt (Wont _) = (nvt {getBinary = False},
-                                Just (Dont rfc856_BINARY_TRANSMISSION))
-negotiateBinary nvt (Dont _) = (nvt {getBinary = False},
-                                Just (Wont rfc856_BINARY_TRANSMISSION))
-
-
-negotiateEcho :: Nvt -> Packet -> (Nvt, Maybe Packet)
-negotiateEcho nvt (Will _) = (nvt {getEcho = True},  Just (Do   rfc857_ECHO))
-negotiateEcho nvt (Do   _) = (nvt {getEcho = True},  Just (Will rfc857_ECHO))
-negotiateEcho nvt (Wont _) = (nvt {getEcho = False}, Just (Dont rfc857_ECHO))
-negotiateEcho nvt (Dont _) = (nvt {getEcho = False}, Just (Wont rfc857_ECHO))
-
-
--- XXX: This is wrong! We do not honor GoAhead at all.
-negotiateSupGoAhead :: Nvt -> Packet -> (Nvt, Maybe Packet)
-negotiateSupGoAhead nvt (Will _) = (nvt {getSupGoAhead = True},
-                                    Just (Do   rfc858_SUPPRESS_GOAHEAD))
-negotiateSupGoAhead nvt (Do   _) = (nvt {getSupGoAhead = True},
-                                    Just (Will rfc858_SUPPRESS_GOAHEAD))
-negotiateSupGoAhead nvt (Wont _) = (nvt {getSupGoAhead = False},
-                                    Just (Dont rfc858_SUPPRESS_GOAHEAD))
-negotiateSupGoAhead nvt (Dont _) = (nvt {getSupGoAhead = False},
-                                    Just (Wont rfc858_SUPPRESS_GOAHEAD))
--}
+doEdgeTrigger :: (Nvt -> Option) -> Nvt -> Nvt -> IO ()
+doEdgeTrigger optionGetter nvt0 nvt1 =
+    let opt0 = optionGetter nvt0
+        opt1 = optionGetter nvt1
+    in case (opt0, opt1) of
+        (Just (flag0, _), Just (flag1, _)) | flag0 /= flag1 -> applyOption opt1
+        _                                                   -> return ()
 
 
 serialize :: Packet -> String

@@ -48,16 +48,21 @@ main = do
     let host = args !! 0
     let port = args !! 1
 
-    let nvt0 = Telnet.defaultNvt
+    -- The default value of binaryMode is not RFC's default value, but we
+    -- fould it useful in practice.
+    let nvt0 = Telnet.Nvt {
+        Telnet.binaryMode = Just (True,  doBinaryMode),
+        Telnet.echo       = Just (False, doEcho),
+        Telnet.supGoAhead = Nothing
+    }
     hPutStrLn stderr (show nvt0)
 
-    -- Setup stdin/stdout
+    Telnet.applyOption $ Telnet.binaryMode nvt0
+    Telnet.applyOption $ Telnet.echo       nvt0
+    Telnet.applyOption $ Telnet.supGoAhead nvt0
+
     hSetBuffering stdin  NoBuffering
     hSetBuffering stdout NoBuffering
-    if Telnet.binaryMode nvt0
-    then hSetBinaryMode stdin  True >>
-         hSetBinaryMode stdout True
-    else return ()
 
     runWithSocket host port $ \socket -> do
     threadId <- forkIO $ keyboardInput socket
@@ -73,7 +78,7 @@ keyboardInput socket =
 
 step :: Telnet.Nvt -> Socket -> [Telnet.Packet] -> IO ()
 step nvt socket (p:ps) = do
-    let (nvt', mp) = Telnet.negotiate nvt p
+    let (nvt', mp) = Telnet.step nvt p
     case p of
         Telnet.PacketText text -> hPutStr   stdout text
         otherwise              -> hPutStrLn stderr ("< " ++ (show p))
@@ -85,16 +90,22 @@ step nvt socket (p:ps) = do
     if nvt /= nvt' then hPutStrLn stderr (show nvt') else return ()
 
     -- Put new state into effect...
-    if Telnet.binaryMode nvt /= Telnet.binaryMode nvt'
-    then hSetBinaryMode stdin  (Telnet.binaryMode nvt') >>
-         hSetBinaryMode stdout (Telnet.binaryMode nvt')
-    else return ()
-    if Telnet.echo nvt /= Telnet.echo nvt'
-    then hSetEcho stdout (not $ Telnet.echo nvt')
-    else return ()
+    Telnet.doEdgeTrigger Telnet.binaryMode nvt nvt'
+    Telnet.doEdgeTrigger Telnet.echo       nvt nvt'
+    Telnet.doEdgeTrigger Telnet.supGoAhead nvt nvt'
 
     step nvt' socket ps
 step _ _ _ = return ()
+
+
+doBinaryMode :: Bool -> IO ()
+doBinaryMode mode =
+    hSetBinaryMode stdin  mode >>
+    hSetBinaryMode stdout mode
+
+
+doEcho :: Bool -> IO ()
+doEcho = hSetEcho stdout . not
 
 
 sendPacket :: Socket -> Telnet.Packet -> IO ()
