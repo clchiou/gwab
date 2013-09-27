@@ -2,6 +2,7 @@
 
 module Main where
 
+import Control.Applicative
 import Control.Concurrent (forkIO, killThread)
 import Data.ByteString.Char8 as Char8 (
         ByteString,
@@ -42,24 +43,30 @@ import System.IO.Unsafe (unsafeInterleaveIO)
 import qualified Telnet
 
 
+callback :: Telnet.NvtContext (Bool -> IO ())
+callback = Telnet.NvtContext {
+    Telnet.binary     = doBinary,
+    Telnet.echo       = doEcho,
+    Telnet.supGoAhead = undefined
+}
+
+
 main :: IO ()
 main = do
     args <- getArgs
     let host = args !! 0
     let port = args !! 1
 
-    -- The default value of binaryMode is not RFC's default value, but we
-    -- fould it useful in practice.
-    let nvt0 = Telnet.Nvt {
-        Telnet.binaryMode = Just (True,  doBinaryMode),
-        Telnet.echo       = Just (False, doEcho),
+    -- The default value of binary transmission is not RFC's default value,
+    -- but we fould it useful in practice.
+    let nvt0 = Telnet.NvtContext {
+        Telnet.binary     = Just True,
+        Telnet.echo       = Just False,
         Telnet.supGoAhead = Nothing
     }
     hPutStrLn stderr (show nvt0)
 
-    Telnet.applyOption $ Telnet.binaryMode nvt0
-    Telnet.applyOption $ Telnet.echo       nvt0
-    Telnet.applyOption $ Telnet.supGoAhead nvt0
+    Telnet.doNvt $ liftA2 (maybe (return ())) callback nvt0
 
     hSetBuffering stdin  NoBuffering
     hSetBuffering stdout NoBuffering
@@ -76,7 +83,7 @@ keyboardInput socket =
     keyboardInput socket
 
 
-step :: Telnet.Nvt -> Socket -> [Telnet.Packet] -> IO ()
+step :: Telnet.NvtContext (Maybe Bool) -> Socket -> [Telnet.Packet] -> IO ()
 step nvt socket (p:ps) = do
     let (nvt', mp) = Telnet.step nvt p
     case p of
@@ -87,19 +94,20 @@ step nvt socket (p:ps) = do
     case mp of
         Just p' -> hPutStrLn stderr ("> " ++ (show p')) >> sendPacket socket p'
         Nothing -> return ()
-    if nvt /= nvt' then hPutStrLn stderr (show nvt') else return ()
 
-    -- Put new state into effect...
-    Telnet.doEdgeTrigger Telnet.binaryMode nvt nvt'
-    Telnet.doEdgeTrigger Telnet.echo       nvt nvt'
-    Telnet.doEdgeTrigger Telnet.supGoAhead nvt nvt'
+    -- Find "edge triggered" flags of nvt and nvt'.
+    let trigger = liftA2 Telnet.edgeTrigger nvt nvt'
+    hPutStrLn stderr $ ("trigger: " ++) $ show trigger
+
+    -- Now put trigger into effect.
+    Telnet.doNvt $ liftA2 (maybe (return ())) callback trigger
 
     step nvt' socket ps
 step _ _ _ = return ()
 
 
-doBinaryMode :: Bool -> IO ()
-doBinaryMode mode =
+doBinary :: Bool -> IO ()
+doBinary mode =
     hSetBinaryMode stdin  mode >>
     hSetBinaryMode stdout mode
 

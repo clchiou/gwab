@@ -5,12 +5,13 @@ module Telnet (
     parse,
     serialize,
 
-    Nvt(..),
-    applyOption,
-    doEdgeTrigger,
-    step
+    NvtContext(..),
+    doNvt,
+    edgeTrigger,
+    step,
 ) where
 
+import Control.Applicative
 import Control.Monad
 
 import Platform (replace)
@@ -170,39 +171,57 @@ readUntilIac prefix suffix
 --
 
 
-type Option = Maybe (Bool, Bool -> IO ())
-
-
--- Network Virtual Terminal
-data Nvt = Nvt {
-    -- RFC-856 Binary Transmission Mode
-    binaryMode :: Option,
+data NvtContext a = NvtContext {
+    -- RFC-856 Binary Transmission
+    binary     :: a,
 
     -- RFC-857 ECHO
-    echo       :: Option,
+    echo       :: a,
 
     -- RFC-858 Suppress GOAHEAD
-    supGoAhead :: Option
+    supGoAhead :: a
 }
 
 
-instance Eq Nvt where
-    nvt0 == nvt1 =
-        binaryMode nvt0 === binaryMode nvt1 &&
-        echo       nvt0 === echo       nvt1 &&
-        supGoAhead nvt0 === supGoAhead nvt1
-        where (===) (Just (flag0, _)) (Just (flag1, _)) = flag0 == flag1
-              (===) Nothing           Nothing           = True
-              (===) _                 _                 = False
+doNvt :: NvtContext (IO ()) -> IO ()
+doNvt nvtIo = do
+    binary     nvtIo
+    echo       nvtIo
+    supGoAhead nvtIo
 
 
-instance Show Nvt where
-    show nvt = "Nvt {" ++
-        "binaryMode = " ++ (show' $ binaryMode nvt) ++ ", " ++
-        "echo = "       ++ (show' $ echo       nvt) ++ ", " ++
-        "supGoAhead = " ++ (show' $ supGoAhead nvt) ++ "}"
-        where show' (Just (flag, _)) = show flag
-              show' Nothing          = "?"
+instance Functor NvtContext where
+    fmap f a = NvtContext {
+        binary     = f $ binary     a,
+        echo       = f $ echo       a,
+        supGoAhead = f $ supGoAhead a
+    }
+
+
+instance Applicative NvtContext where
+    pure v = NvtContext {
+        binary     = v,
+        echo       = v,
+        supGoAhead = v
+    }
+
+    f <*> a = NvtContext {
+        binary     = binary     f (binary     a),
+        echo       = echo       f (echo       a),
+        supGoAhead = supGoAhead f (supGoAhead a)
+    }
+
+
+instance Show a => Show (NvtContext a) where
+    show nvtcxt = "NvtContext {" ++
+        "binary = "     ++ binary     nvtcxt' ++ ", " ++
+        "echo = "       ++ echo       nvtcxt' ++ ", " ++
+        "supGoAhead = " ++ supGoAhead nvtcxt' ++ "}"
+        where nvtcxt' = show `fmap` nvtcxt
+
+
+type Nvt    = NvtContext Option
+type Option = Maybe Bool
 
 
 step :: Nvt -> Packet -> (Nvt, Maybe Packet)
@@ -216,18 +235,18 @@ step nvt0 _                     = (nvt0, Nothing)
 stepNegotiation :: Nvt -> Packet -> Bool -> (Nvt, Maybe Packet)
 stepNegotiation nvt0 packet flag =
     case getOption opt >>= ($ nvt0) of
-        Nothing            -> (nvt0, Just $ nak packet)
-        Just (_, doOption) -> (setOption nvt0 opt option', Just $ ack packet)
-            where option' = Just (flag, doOption)
+        Nothing -> (nvt0, Just $ nak packet)
+        Just _  -> (setOption nvt0 opt option', Just $ ack packet)
+            where option' = Just flag
     where opt = optionCode packet
 
           getOption = flip lookup [
-                (rfc856_BINARY_TRANSMISSION, binaryMode),
+                (rfc856_BINARY_TRANSMISSION, binary),
                 (rfc857_ECHO,                echo),
                 (rfc858_SUPPRESS_GOAHEAD,    supGoAhead)]
 
           setOption nvt opt option
-              | opt == rfc856_BINARY_TRANSMISSION = nvt{binaryMode=option}
+              | opt == rfc856_BINARY_TRANSMISSION = nvt{binary    =option}
               | opt == rfc857_ECHO                = nvt{echo      =option}
               | opt == rfc858_SUPPRESS_GOAHEAD    = nvt{supGoAhead=option}
               | otherwise                         = undefined
@@ -243,15 +262,6 @@ stepNegotiation nvt0 packet flag =
           nak (PacketDont opt) = PacketWont opt
 
 
-applyOption :: Option -> IO ()
-applyOption (Just (flag, doOption)) = return flag >>= doOption
-applyOption Nothing                 = return ()
-
-
-doEdgeTrigger :: (Nvt -> Option) -> Nvt -> Nvt -> IO ()
-doEdgeTrigger optionGetter nvt0 nvt1 =
-    let opt0 = optionGetter nvt0
-        opt1 = optionGetter nvt1
-    in case (opt0, opt1) of
-        (Just (flag0, _), Just (flag1, _)) | flag0 /= flag1 -> applyOption opt1
-        _                                                   -> return ()
+edgeTrigger :: Option -> Option -> Option
+edgeTrigger (Just a) (Just b) | a /= b = Just b
+edgeTrigger _        _                 = Nothing
