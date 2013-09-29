@@ -41,11 +41,12 @@ import System.Environment (getArgs)
 import System.IO.Unsafe (unsafeInterleaveIO)
 
 import Telnet
+import Telnet.Utils
 
 
 -- The default value of binary transmission is not RFC's default value, but we
 -- fould it useful in practice.
-nvt0 :: NvtContext NvtOpt
+nvt0 :: Nvt
 nvt0  = NvtContext {
     binary     = NvtOptBool True,
     echo       = NvtOptBool False,
@@ -62,7 +63,7 @@ nvtOptDoer  = NvtContext {
 }
 
 
-doNvtOpt :: NvtContext NvtOpt -> IO ()
+doNvtOpt :: Nvt -> IO ()
 doNvtOpt nvt = doNvt $ liftA2 (maybe' (return())) nvtOptDoer nvt
     where maybe' zero doer opt =
             if opt /= NvtOptNothing then doer opt else zero
@@ -92,7 +93,7 @@ keyboardInput socket =
     keyboardInput socket
 
 
-forever :: NvtContext NvtOpt -> Socket -> [Packet] -> IO ()
+forever :: Nvt -> Socket -> [Packet] -> IO ()
 forever nvt socket (p:ps) = do
     let (nvt', mp) = step nvt p
     case p of

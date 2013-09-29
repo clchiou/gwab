@@ -7,68 +7,23 @@ module Telnet (
 
     NvtContext(..),
     NvtOpt(..),
-    doNvt,
-    edge,
+    Nvt,
     step,
 ) where
 
 import Control.Applicative
 import Control.Monad
-import Data.Maybe
 
-import Platform (replace)
 import StringFilter
 import StringFilter.Utils
 
-
-type CommandCode = Char
-type OptionCode  = Char
-
-
-rfc854_SE       = '\240' :: CommandCode -- End of subnegotiation
-rfc854_NOP      = '\241' :: CommandCode -- NOP
-rfc854_DATAMARK = '\242' :: CommandCode -- Data Mark
-rfc854_BREAK    = '\243' :: CommandCode -- Break
-rfc854_IP       = '\244' :: CommandCode -- Interrupt Process
-rfc854_AO       = '\245' :: CommandCode -- Abort output
-rfc854_AYT      = '\246' :: CommandCode -- Are you there
-rfc854_EC       = '\247' :: CommandCode -- Erase character
-rfc854_EL       = '\248' :: CommandCode -- Erase line
-rfc854_GOAHEAD  = '\249' :: CommandCode -- Go ahead
-rfc854_SB       = '\250' :: CommandCode -- Begin of subnegotiation
-rfc854_WILL     = '\251' :: CommandCode -- WILL
-rfc854_WONT     = '\252' :: CommandCode -- WON'T
-rfc854_DO       = '\253' :: CommandCode -- DO
-rfc854_DONT     = '\254' :: CommandCode -- DON'T
-rfc854_IAC      = '\255' :: CommandCode -- IAC
-
-
-rfc856_BINARY_TRANSMISSION = '\0' :: OptionCode
-rfc857_ECHO                = '\1' :: OptionCode
-rfc858_SUPPRESS_GOAHEAD    = '\3' :: OptionCode
+import Telnet.Consts
+import Telnet.Internal.Utils
 
 
 --
 -- Telnet : Wire Protocol
 --
-
-
-data Packet = PacketNop
-            | PacketDataMark
-            | PacketBreak
-            | PacketIp
-            | PacketAo
-            | PacketAyt
-            | PacketEc
-            | PacketEl
-            | PacketGoAhead
-            | PacketSubOption { subOption :: String }
-            | PacketWill      { optionCode :: OptionCode }
-            | PacketWont      { optionCode :: OptionCode }
-            | PacketDo        { optionCode :: OptionCode }
-            | PacketDont      { optionCode :: OptionCode }
-            | PacketText      { text :: String }
-              deriving (Eq, Show)
 
 
 -- NOTE: Errors of input are ignored; we shift one left and keep parsing.
@@ -98,10 +53,6 @@ serialize (PacketSubOption subopt) = [rfc854_IAC, rfc854_SB] ++
                                      quote subopt            ++
                                      [rfc854_IAC, rfc854_SE]
 serialize (PacketText text)        = quote text
-
-
-quote :: String -> String
-quote = replace [rfc854_IAC] [rfc854_IAC, rfc854_IAC]
 
 
 filterTelnet :: StringFilter Packet
@@ -148,65 +99,9 @@ filterTelnet =
           readText = getPrefix (/= rfc854_IAC)
 
 
--- NOTE: readUntilIac is NOT lazy; it continues to read until it sees an IAC
--- that is not sent as data, i.e., start of next command.  The non-laziness is
--- probably only useful when parsing subnegotiation where the suboption is not
--- complete until we see an SE command.
---
--- This function also unquotes IACs that are sent as data.
-readUntilIac :: String -> String -> Maybe (String, String)
-readUntilIac prefix suffix
-    | null suffix =
-        if null prefix
-        then Nothing
-        else Just (prefix, suffix)
-    | otherwise =
-        if iacSentAsData == [rfc854_IAC, rfc854_IAC]
-        then readUntilIac (prefix ++ prefix' ++ [rfc854_IAC]) suffix''
-        else Just (prefix ++ prefix', suffix')
-        where (prefix', suffix')        = span (/= rfc854_IAC) suffix
-              (iacSentAsData, suffix'') = splitAt 2 suffix'
-
-
 --
 -- Telnet : Network Virtual Terminal
 --
-
-
-type Nvt          = NvtContext NvtOpt
-data NvtContext a = NvtContext {
-    -- RFC-856 Binary Transmission
-    binary     :: a,
-
-    -- RFC-857 ECHO
-    echo       :: a,
-
-    -- RFC-858 Suppress GOAHEAD
-    supGoAhead :: a
-}
-
-
-data NvtOpt = NvtOptBool   { nvtOptBool   :: Bool   }
-            | NvtOptInt    { nvtOptInt    :: Int    }
-            | NvtOptString { nvtOptString :: String }
-            | NvtOptNothing
-              deriving (Eq, Show)
-
-
-nvtOptionCode :: NvtContext OptionCode
-nvtOptionCode  = NvtContext {
-    binary     = rfc856_BINARY_TRANSMISSION,
-    echo       = rfc857_ECHO,
-    supGoAhead = rfc858_SUPPRESS_GOAHEAD
-}
-
-
-nvtOptionName :: NvtContext String
-nvtOptionName  = NvtContext {
-    binary     = "binary",
-    echo       = "echo",
-    supGoAhead = "supGoAhead"
-}
 
 
 instance Functor NvtContext where
@@ -231,16 +126,6 @@ instance Applicative NvtContext where
     }
 
 
-foldlN :: (a -> b -> a) -> a -> NvtContext b -> a
-foldlN f z nvt =
-    z `f` binary nvt `f` echo nvt `f` supGoAhead nvt
-
-
-foldl1N :: (a -> a -> a) -> NvtContext a -> a
-foldl1N f nvt =
-    binary nvt `f` echo nvt `f` supGoAhead nvt
-
-
 instance Eq a => Eq (NvtContext a) where
     nvt0 == nvt1 = foldl1N (&&) (liftA2 (==) nvt0 nvt1)
 
@@ -251,6 +136,14 @@ instance Show a => Show (NvtContext a) where
               opts'       = showopt <$> nvtOptionName <*> nvt
               showopt n v = n ++ " = " ++ show v
               joinopt a b = a ++ ", " ++ b
+
+
+nvtOptionName :: NvtContext String
+nvtOptionName  = NvtContext {
+    binary     = "binary",
+    echo       = "echo",
+    supGoAhead = "supGoAhead"
+}
 
 
 step :: Nvt -> Packet -> (Nvt, Maybe Packet)
@@ -273,6 +166,14 @@ negotiate nvt packet flag = (nvt', Just response)
           makepkt   = select supported (pure ack) (pure nak)
 
 
+nvtOptionCode :: NvtContext OptionCode
+nvtOptionCode  = NvtContext {
+    binary     = rfc856_BINARY_TRANSMISSION,
+    echo       = rfc857_ECHO,
+    supGoAhead = rfc858_SUPPRESS_GOAHEAD
+}
+
+
 select :: NvtContext Bool -> NvtContext a -> NvtContext a -> NvtContext a
 select pred then_ else_ = liftA3 select' pred then_ else_
     where select' pred then_ else_ = if pred then then_ else else_
@@ -281,28 +182,3 @@ select pred then_ else_ = liftA3 select' pred then_ else_
 pick :: a -> NvtContext Bool -> NvtContext a -> a
 pick zero pred candidate = foldlN pick' zero (liftA2 (,) pred candidate)
     where pick' z (p, c) = if p then c else z
-
-
-ack :: Packet -> Packet
-ack (PacketWill opt) = PacketDo   opt
-ack (PacketDo   opt) = PacketWill opt
-ack (PacketWont opt) = PacketDont opt
-ack (PacketDont opt) = PacketWont opt
-
-
-nak :: Packet -> Packet
-nak (PacketWill opt) = PacketDont opt
-nak (PacketDo   opt) = PacketWont opt
-nak (PacketWont opt) = PacketDont opt
-nak (PacketDont opt) = PacketWont opt
-
-
-edge :: NvtOpt -> NvtOpt -> NvtOpt
-edge (NvtOptBool   p) opt@(NvtOptBool   q) | p /= q = opt
-edge (NvtOptInt    p) opt@(NvtOptInt    q) | p /= q = opt
-edge (NvtOptString p) opt@(NvtOptString q) | p /= q = opt
-edge _                _                             = NvtOptNothing
-
-
-doNvt :: NvtContext (IO ()) -> IO ()
-doNvt = foldl1N (>>)

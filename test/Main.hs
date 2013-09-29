@@ -6,6 +6,7 @@ import Data.String.Utils
 import Test.QuickCheck
 
 import Telnet
+import Telnet.Utils
 
 
 main :: IO ()
@@ -90,17 +91,17 @@ not'  = liftA not''
           not'' NvtOptNothing                  = NvtOptNothing
 
 
-prop_absorbing_element :: NvtContext NvtOpt -> Bool
+prop_absorbing_element :: Nvt -> Bool
 prop_absorbing_element nvt =
     nvt  `edge'` zero == zero &&
     zero `edge'` nvt  == zero
 
 
-prop_zero_sum :: NvtContext NvtOpt -> Bool
+prop_zero_sum :: Nvt -> Bool
 prop_zero_sum nvt = nvt `edge'` nvt == zero
 
 
-prop_edge_trigger :: NvtContext NvtOpt -> Bool
+prop_edge_trigger :: Nvt -> Bool
 prop_edge_trigger nvt =
     nvt      `edge'` not' nvt == not' nvt &&
     not' nvt `edge'`      nvt ==      nvt
