@@ -13,6 +13,7 @@ module Telnet (
 
 import Control.Applicative
 import Control.Monad
+import Data.Maybe
 
 import Platform (replace)
 import StringFilter
@@ -183,11 +184,12 @@ data NvtContext a = NvtContext {
 }
 
 
-doNvt :: NvtContext (IO ()) -> IO ()
-doNvt nvtIo = do
-    binary     nvtIo
-    echo       nvtIo
-    supGoAhead nvtIo
+nvtOptionCode :: NvtContext OptionCode
+nvtOptionCode  = NvtContext {
+    binary     = rfc856_BINARY_TRANSMISSION,
+    echo       = rfc857_ECHO,
+    supGoAhead = rfc858_SUPPRESS_GOAHEAD
+}
 
 
 instance Functor NvtContext where
@@ -227,48 +229,71 @@ instance Show a => Show (NvtContext a) where
         where nvtcxt' = show `fmap` nvtcxt
 
 
+foldlN :: (a -> b -> a) -> a -> NvtContext b -> a
+foldlN f z nvt =
+    z `f` binary nvt `f` echo nvt `f` supGoAhead nvt
+
+
 type Nvt    = NvtContext Option
 type Option = Maybe Bool
 
 
 step :: Nvt -> Packet -> (Nvt, Maybe Packet)
-step nvt0 packet@(PacketWill _) = stepNegotiation nvt0 packet True
-step nvt0 packet@(PacketDo   _) = stepNegotiation nvt0 packet True
-step nvt0 packet@(PacketWont _) = stepNegotiation nvt0 packet False
-step nvt0 packet@(PacketDont _) = stepNegotiation nvt0 packet False
-step nvt0 _                     = (nvt0, Nothing)
+step nvt packet@(PacketWill _) = stepNegotiation nvt packet True
+step nvt packet@(PacketDo   _) = stepNegotiation nvt packet True
+step nvt packet@(PacketWont _) = stepNegotiation nvt packet False
+step nvt packet@(PacketDont _) = stepNegotiation nvt packet False
+step nvt _                     = (nvt, Nothing)
 
 
 stepNegotiation :: Nvt -> Packet -> Bool -> (Nvt, Maybe Packet)
-stepNegotiation nvt0 packet flag =
-    case getOption opt >>= ($ nvt0) of
-        Nothing -> (nvt0, Just $ nak packet)
-        Just _  -> (setOption nvt0 opt option', Just $ ack packet)
-            where option' = Just flag
+stepNegotiation nvt packet flag =
+    (setOption opt flag nvt, Just (makeResponse opt nvt packet))
     where opt = optionCode packet
 
-          getOption = flip lookup [
-                (rfc856_BINARY_TRANSMISSION, binary),
-                (rfc857_ECHO,                echo),
-                (rfc858_SUPPRESS_GOAHEAD,    supGoAhead)]
 
-          setOption nvt opt option
-              | opt == rfc856_BINARY_TRANSMISSION = nvt{binary    =option}
-              | opt == rfc857_ECHO                = nvt{echo      =option}
-              | opt == rfc858_SUPPRESS_GOAHEAD    = nvt{supGoAhead=option}
-              | otherwise                         = undefined
+selectOption :: OptionCode -> NvtContext Bool
+selectOption = liftA2 (==) nvtOptionCode . pure
 
-          ack (PacketWill opt) = PacketDo   opt
-          ack (PacketDo   opt) = PacketWill opt
-          ack (PacketWont opt) = PacketDont opt
-          ack (PacketDont opt) = PacketWont opt
 
-          nak (PacketWill opt) = PacketDont opt
-          nak (PacketDo   opt) = PacketWont opt
-          nak (PacketWont opt) = PacketDont opt
-          nak (PacketDont opt) = PacketWont opt
+setOption :: OptionCode -> Bool -> Nvt -> Nvt
+setOption opt flag nvt0 =
+    (select &&& flag') ||| (not' select &&& nvt0)
+    where select = fmap Just (selectOption opt)
+          flag'  = pure (Just flag)
+          not'   = liftA (liftA not)
+          (&&&)  = liftA2 (liftA2 (&&))
+          (|||)  = liftA2 (liftA2 (||))
+
+
+makeResponse :: OptionCode -> Nvt -> Packet -> Packet
+makeResponse opt nvt packet = pktgen packet
+    where select  = selectOption opt
+          pktgens = fmap (\option -> if isJust option then ack else nak) nvt
+          pktgen  = foldlN
+                    (\zero (select, pktgen) -> if select then pktgen else zero)
+                    nak
+                    (liftA2 (,) select pktgens)
+
+
+ack :: Packet -> Packet
+ack (PacketWill opt) = PacketDo   opt
+ack (PacketDo   opt) = PacketWill opt
+ack (PacketWont opt) = PacketDont opt
+ack (PacketDont opt) = PacketWont opt
+
+
+nak :: Packet -> Packet
+nak (PacketWill opt) = PacketDont opt
+nak (PacketDo   opt) = PacketWont opt
+nak (PacketWont opt) = PacketDont opt
+nak (PacketDont opt) = PacketWont opt
 
 
 edgeTrigger :: Option -> Option -> Option
 edgeTrigger (Just a) (Just b) | a /= b = Just b
 edgeTrigger _        _                 = Nothing
+
+
+doNvt :: NvtContext (IO ()) -> IO ()
+doNvt = foldlN (>>) (return ())
