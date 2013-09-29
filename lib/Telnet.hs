@@ -212,6 +212,13 @@ instance Applicative NvtContext where
     }
 
 
+instance Eq a => Eq (NvtContext a) where
+    nvt0 == nvt1 =
+        binary     nvt0 == binary     nvt1 &&
+        echo       nvt0 == echo       nvt1 &&
+        supGoAhead nvt0 == supGoAhead nvt1
+
+
 instance Show a => Show (NvtContext a) where
     show nvtcxt = "NvtContext {" ++
         "binary = "     ++ binary     nvtcxt' ++ ", " ++
