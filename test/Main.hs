@@ -67,26 +67,40 @@ prop_identity2 ps = identity cs == cs
 --
 
 
+instance Arbitrary NvtOpt where
+    arbitrary = oneof [
+        liftM  NvtOptBool   arbitrary,
+        liftM  NvtOptInt    arbitrary,
+        liftM  NvtOptString arbitrary,
+        return NvtOptNothing]
+
+
 instance Arbitrary a => Arbitrary (NvtContext a) where
     arbitrary = liftM3 NvtContext arbitrary arbitrary arbitrary
 
 
-edgeTrigger' = liftA2 edgeTrigger
-not'         = liftA (liftA not)
-zero         = pure Nothing
+edge' = liftA2 edge
+zero  = pure NvtOptNothing
+not'  = liftA not''
+    where not'' (NvtOptBool   opt)             = NvtOptBool $ not opt
+          not'' (NvtOptInt    opt) | opt == 0  = NvtOptInt 1
+          not'' (NvtOptInt    opt) | opt /= 0  = NvtOptInt 0
+          not'' (NvtOptString opt) | opt == "" = NvtOptString " "
+          not'' (NvtOptString opt) | opt /= "" = NvtOptString ""
+          not'' NvtOptNothing                  = NvtOptNothing
 
 
-prop_absorbing_element :: NvtContext (Maybe Bool) -> Bool
+prop_absorbing_element :: NvtContext NvtOpt -> Bool
 prop_absorbing_element nvt =
-    nvt  `edgeTrigger'` zero == zero &&
-    zero `edgeTrigger'` nvt  == zero
+    nvt  `edge'` zero == zero &&
+    zero `edge'` nvt  == zero
 
 
-prop_zero_sum :: NvtContext (Maybe Bool) -> Bool
-prop_zero_sum nvt = nvt `edgeTrigger'` nvt == zero
+prop_zero_sum :: NvtContext NvtOpt -> Bool
+prop_zero_sum nvt = nvt `edge'` nvt == zero
 
 
-prop_edge_trigger :: NvtContext (Maybe Bool) -> Bool
+prop_edge_trigger :: NvtContext NvtOpt -> Bool
 prop_edge_trigger nvt =
-    nvt      `edgeTrigger'` not' nvt == not' nvt &&
-    not' nvt `edgeTrigger'`      nvt ==      nvt
+    nvt      `edge'` not' nvt == not' nvt &&
+    not' nvt `edge'`      nvt ==      nvt

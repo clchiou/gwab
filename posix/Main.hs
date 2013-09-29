@@ -40,15 +40,32 @@ import System.IO (
 import System.Environment (getArgs)
 import System.IO.Unsafe (unsafeInterleaveIO)
 
-import qualified Telnet
+import Telnet
 
 
-callback :: Telnet.NvtContext (Bool -> IO ())
-callback = Telnet.NvtContext {
-    Telnet.binary     = doBinary,
-    Telnet.echo       = doEcho,
-    Telnet.supGoAhead = undefined
+-- The default value of binary transmission is not RFC's default value, but we
+-- fould it useful in practice.
+nvt0 :: NvtContext NvtOpt
+nvt0  = NvtContext {
+    binary     = NvtOptBool True,
+    echo       = NvtOptBool False,
+    supGoAhead = NvtOptNothing
 }
+
+
+nvtOptDoer :: NvtContext (NvtOpt -> IO ())
+nvtOptDoer  = NvtContext {
+    binary     = \opt -> hSetBinaryMode stdin  (nvtOptBool opt) >>
+                         hSetBinaryMode stdout (nvtOptBool opt),
+    echo       = \opt -> hSetEcho stdout $ not (nvtOptBool opt),
+    supGoAhead = undefined
+}
+
+
+doNvtOpt :: NvtContext NvtOpt -> IO ()
+doNvtOpt nvt = doNvt $ liftA2 (maybe' (return())) nvtOptDoer nvt
+    where maybe' zero doer opt =
+            if opt /= NvtOptNothing then doer opt else zero
 
 
 main :: IO ()
@@ -57,23 +74,15 @@ main = do
     let host = args !! 0
     let port = args !! 1
 
-    -- The default value of binary transmission is not RFC's default value,
-    -- but we fould it useful in practice.
-    let nvt0 = Telnet.NvtContext {
-        Telnet.binary     = Just True,
-        Telnet.echo       = Just False,
-        Telnet.supGoAhead = Nothing
-    }
     hPutStrLn stderr (show nvt0)
-
-    Telnet.doNvt $ liftA2 (maybe (return ())) callback nvt0
+    doNvtOpt nvt0
 
     hSetBuffering stdin  NoBuffering
     hSetBuffering stdout NoBuffering
 
     runWithSocket host port $ \socket -> do
     threadId <- forkIO $ keyboardInput socket
-    lazyRecvAll socket >>= step nvt0 socket . Telnet.parse
+    lazyRecvAll socket >>= forever nvt0 socket . parse
     killThread threadId
 
 
@@ -83,45 +92,35 @@ keyboardInput socket =
     keyboardInput socket
 
 
-step :: Telnet.NvtContext (Maybe Bool) -> Socket -> [Telnet.Packet] -> IO ()
-step nvt socket (p:ps) = do
-    let (nvt', mp) = Telnet.step nvt p
+forever :: NvtContext NvtOpt -> Socket -> [Packet] -> IO ()
+forever nvt socket (p:ps) = do
+    let (nvt', mp) = step nvt p
     case p of
-        Telnet.PacketText text -> hPutStr   stdout text
-        otherwise              -> hPutStrLn stderr ("< " ++ (show p))
+        PacketText text -> hPutStr   stdout text
+        otherwise       -> hPutStrLn stderr ("< " ++ (show p))
 
     -- Debug output
     case mp of
         Just p' -> hPutStrLn stderr ("> " ++ (show p')) >> sendPacket socket p'
         Nothing -> return ()
 
-    -- Find "edge triggered" flags of nvt and nvt'.
-    let trigger = liftA2 Telnet.edgeTrigger nvt nvt'
-    hPutStrLn stderr $ ("trigger: " ++) $ show trigger
+    -- Find edge triggered options from nvt to nvt'.
+    let triggered = liftA2 edge nvt nvt'
+    hPutStrLn stderr $ ("triggered: " ++) $ show triggered
 
     -- Now put trigger into effect.
-    Telnet.doNvt $ liftA2 (maybe (return ())) callback trigger
+    doNvtOpt triggered
 
-    step nvt' socket ps
-step _ _ _ = return ()
-
-
-doBinary :: Bool -> IO ()
-doBinary mode =
-    hSetBinaryMode stdin  mode >>
-    hSetBinaryMode stdout mode
+    forever nvt' socket ps
+forever _ _ _ = return ()
 
 
-doEcho :: Bool -> IO ()
-doEcho = hSetEcho stdout . not
+sendPacket :: Socket -> Packet -> IO ()
+sendPacket socket packet = sendAll socket $ serialize' packet
 
 
-sendPacket :: Socket -> Telnet.Packet -> IO ()
-sendPacket socket packet = sendAll socket $ serialize packet
-
-
-serialize :: Telnet.Packet -> ByteString
-serialize = Char8.pack . Telnet.serialize
+serialize' :: Packet -> ByteString
+serialize' = Char8.pack . serialize
 
 
 lazyRecvAll :: Socket -> IO String

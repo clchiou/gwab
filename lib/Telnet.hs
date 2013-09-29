@@ -6,8 +6,9 @@ module Telnet (
     serialize,
 
     NvtContext(..),
+    NvtOpt(..),
     doNvt,
-    edgeTrigger,
+    edge,
     step,
 ) where
 
@@ -172,6 +173,7 @@ readUntilIac prefix suffix
 --
 
 
+type Nvt          = NvtContext NvtOpt
 data NvtContext a = NvtContext {
     -- RFC-856 Binary Transmission
     binary     :: a,
@@ -182,6 +184,13 @@ data NvtContext a = NvtContext {
     -- RFC-858 Suppress GOAHEAD
     supGoAhead :: a
 }
+
+
+data NvtOpt = NvtOptBool   { nvtOptBool   :: Bool   }
+            | NvtOptInt    { nvtOptInt    :: Int    }
+            | NvtOptString { nvtOptString :: String }
+            | NvtOptNothing
+              deriving (Eq, Show)
 
 
 nvtOptionCode :: NvtContext OptionCode
@@ -244,46 +253,34 @@ instance Show a => Show (NvtContext a) where
               joinopt a b = a ++ ", " ++ b
 
 
-type Nvt    = NvtContext Option
-type Option = Maybe Bool
-
-
 step :: Nvt -> Packet -> (Nvt, Maybe Packet)
-step nvt packet@(PacketWill _) = stepNegotiation nvt packet True
-step nvt packet@(PacketDo   _) = stepNegotiation nvt packet True
-step nvt packet@(PacketWont _) = stepNegotiation nvt packet False
-step nvt packet@(PacketDont _) = stepNegotiation nvt packet False
+step nvt packet@(PacketWill _) = negotiate nvt packet True
+step nvt packet@(PacketDo   _) = negotiate nvt packet True
+step nvt packet@(PacketWont _) = negotiate nvt packet False
+step nvt packet@(PacketDont _) = negotiate nvt packet False
 step nvt _                     = (nvt, Nothing)
 
 
-stepNegotiation :: Nvt -> Packet -> Bool -> (Nvt, Maybe Packet)
-stepNegotiation nvt packet flag =
-    (setOption opt flag nvt, Just (makeResponse opt nvt packet))
-    where opt = optionCode packet
+negotiate :: Nvt -> Packet -> Bool -> (Nvt, Maybe Packet)
+negotiate nvt packet flag = (nvt', Just response)
+    where matched   = liftA2 (==) nvtOptionCode $ pure (optionCode packet)
+          supported = fmap (/= NvtOptNothing) nvt
+          -- Compute new nvt state
+          nvt'      = select matched flag' nvt
+          flag'     = pure (NvtOptBool flag)
+          -- Compute response packet
+          response  = pick nak matched makepkt packet
+          makepkt   = select supported (pure ack) (pure nak)
 
 
-selectOption :: OptionCode -> NvtContext Bool
-selectOption = liftA2 (==) nvtOptionCode . pure
+select :: NvtContext Bool -> NvtContext a -> NvtContext a -> NvtContext a
+select pred then_ else_ = liftA3 select' pred then_ else_
+    where select' pred then_ else_ = if pred then then_ else else_
 
 
-setOption :: OptionCode -> Bool -> Nvt -> Nvt
-setOption opt flag nvt0 =
-    (select &&& flag') ||| (not' select &&& nvt0)
-    where select = fmap Just (selectOption opt)
-          flag'  = pure (Just flag)
-          not'   = liftA (liftA not)
-          (&&&)  = liftA2 (liftA2 (&&))
-          (|||)  = liftA2 (liftA2 (||))
-
-
-makeResponse :: OptionCode -> Nvt -> Packet -> Packet
-makeResponse opt nvt packet = pktgen packet
-    where select  = selectOption opt
-          pktgens = fmap (\option -> if isJust option then ack else nak) nvt
-          pktgen  = foldlN
-                    (\zero (select, pktgen) -> if select then pktgen else zero)
-                    nak
-                    (liftA2 (,) select pktgens)
+pick :: a -> NvtContext Bool -> NvtContext a -> a
+pick zero pred candidate = foldlN pick' zero (liftA2 (,) pred candidate)
+    where pick' z (p, c) = if p then c else z
 
 
 ack :: Packet -> Packet
@@ -300,9 +297,11 @@ nak (PacketWont opt) = PacketDont opt
 nak (PacketDont opt) = PacketWont opt
 
 
-edgeTrigger :: Option -> Option -> Option
-edgeTrigger (Just a) (Just b) | a /= b = Just b
-edgeTrigger _        _                 = Nothing
+edge :: NvtOpt -> NvtOpt -> NvtOpt
+edge (NvtOptBool   p) opt@(NvtOptBool   q) | p /= q = opt
+edge (NvtOptInt    p) opt@(NvtOptInt    q) | p /= q = opt
+edge (NvtOptString p) opt@(NvtOptString q) | p /= q = opt
+edge _                _                             = NvtOptNothing
 
 
 doNvt :: NvtContext (IO ()) -> IO ()
