@@ -192,6 +192,14 @@ nvtOptionCode  = NvtContext {
 }
 
 
+nvtOptionName :: NvtContext String
+nvtOptionName  = NvtContext {
+    binary     = "binary",
+    echo       = "echo",
+    supGoAhead = "supGoAhead"
+}
+
+
 instance Functor NvtContext where
     fmap f a = NvtContext {
         binary     = f $ binary     a,
@@ -214,24 +222,26 @@ instance Applicative NvtContext where
     }
 
 
-instance Eq a => Eq (NvtContext a) where
-    nvt0 == nvt1 =
-        binary     nvt0 == binary     nvt1 &&
-        echo       nvt0 == echo       nvt1 &&
-        supGoAhead nvt0 == supGoAhead nvt1
-
-
-instance Show a => Show (NvtContext a) where
-    show nvtcxt = "NvtContext {" ++
-        "binary = "     ++ binary     nvtcxt' ++ ", " ++
-        "echo = "       ++ echo       nvtcxt' ++ ", " ++
-        "supGoAhead = " ++ supGoAhead nvtcxt' ++ "}"
-        where nvtcxt' = show `fmap` nvtcxt
-
-
 foldlN :: (a -> b -> a) -> a -> NvtContext b -> a
 foldlN f z nvt =
     z `f` binary nvt `f` echo nvt `f` supGoAhead nvt
+
+
+foldl1N :: (a -> a -> a) -> NvtContext a -> a
+foldl1N f nvt =
+    binary nvt `f` echo nvt `f` supGoAhead nvt
+
+
+instance Eq a => Eq (NvtContext a) where
+    nvt0 == nvt1 = foldl1N (&&) (liftA2 (==) nvt0 nvt1)
+
+
+instance Show a => Show (NvtContext a) where
+    show nvt = "NvtContext {" ++ opts ++ "}"
+        where opts        = foldl1N joinopt opts'
+              opts'       = showopt <$> nvtOptionName <*> nvt
+              showopt n v = n ++ " = " ++ show v
+              joinopt a b = a ++ ", " ++ b
 
 
 type Nvt    = NvtContext Option
@@ -296,4 +306,4 @@ edgeTrigger _        _                 = Nothing
 
 
 doNvt :: NvtContext (IO ()) -> IO ()
-doNvt = foldlN (>>) (return ())
+doNvt = foldl1N (>>)
