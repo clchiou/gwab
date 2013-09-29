@@ -1,6 +1,6 @@
 -- Copyright (C) 2013 Che-Liang Chiou.
 
-module Utils (
+module StringFilter.Utils (
     getByte,
     getPrefix,
     matchByte,

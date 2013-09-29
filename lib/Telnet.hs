@@ -18,7 +18,7 @@ import Data.Maybe
 
 import Platform (replace)
 import StringFilter
-import Utils
+import StringFilter.Utils
 
 
 type CommandCode = Char
