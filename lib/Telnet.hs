@@ -108,7 +108,9 @@ instance Functor NvtContext where
     fmap f a = NvtContext {
         binary     = f $ binary     a,
         echo       = f $ echo       a,
-        supGoAhead = f $ supGoAhead a
+        supGoAhead = f $ supGoAhead a,
+        width      = f $ width      a,
+        height     = f $ height     a
     }
 
 
@@ -116,13 +118,17 @@ instance Applicative NvtContext where
     pure v = NvtContext {
         binary     = v,
         echo       = v,
-        supGoAhead = v
+        supGoAhead = v,
+        width      = v,
+        height     = v
     }
 
     f <*> a = NvtContext {
         binary     = binary     f (binary     a),
         echo       = echo       f (echo       a),
-        supGoAhead = supGoAhead f (supGoAhead a)
+        supGoAhead = supGoAhead f (supGoAhead a),
+        width      = width      f (width      a),
+        height     = height     f (height     a)
     }
 
 
@@ -142,21 +148,24 @@ nvtOptionName :: NvtContext String
 nvtOptionName  = NvtContext {
     binary     = "binary",
     echo       = "echo",
-    supGoAhead = "supGoAhead"
+    supGoAhead = "supGoAhead",
+    width      = "width",
+    height     = "height"
 }
 
 
-step :: Nvt -> Packet -> (Nvt, Maybe Packet)
+step :: Nvt -> Packet -> (Nvt, [Packet])
 step nvt packet@(PacketWill _) = negotiate nvt packet True
 step nvt packet@(PacketDo   _) = negotiate nvt packet True
 step nvt packet@(PacketWont _) = negotiate nvt packet False
 step nvt packet@(PacketDont _) = negotiate nvt packet False
-step nvt _                     = (nvt, Nothing)
+step nvt _                     = (nvt, [])
 
 
-negotiate :: Nvt -> Packet -> Bool -> (Nvt, Maybe Packet)
-negotiate nvt packet flag = (nvt', Just response)
-    where matched   = liftA2 (==) nvtOptionCode $ pure (optionCode packet)
+negotiate :: Nvt -> Packet -> Bool -> (Nvt, [Packet])
+negotiate nvt packet flag = (nvt', response:extra)
+    where opt       = optionCode packet
+          matched   = liftA2 (==) nvtOptionCode $ pure opt
           supported = fmap (/= NvtOptNothing) nvt
           -- Compute new nvt state
           nvt'      = select matched flag' nvt
@@ -164,13 +173,23 @@ negotiate nvt packet flag = (nvt', Just response)
           -- Compute response packet
           response  = pick nak matched makepkt packet
           makepkt   = select supported (pure ack) (pure nak)
+          -- Compute extra response packets
+          extra     = if isPktDo packet && opt == rfc1073_WINDOW_SIZE
+                      then [naws (nvtOptInt $ width  nvt)
+                                 (nvtOptInt $ height nvt)]
+                      else []
+          isPktDo p = case p of
+                      PacketDo _ -> True
+                      _          -> False
 
 
 nvtOptionCode :: NvtContext OptionCode
 nvtOptionCode  = NvtContext {
     binary     = rfc856_BINARY_TRANSMISSION,
     echo       = rfc857_ECHO,
-    supGoAhead = rfc858_SUPPRESS_GOAHEAD
+    supGoAhead = rfc858_SUPPRESS_GOAHEAD,
+    width      = rfc1073_WINDOW_SIZE,
+    height     = rfc1073_WINDOW_SIZE
 }
 
 

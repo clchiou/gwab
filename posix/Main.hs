@@ -50,6 +50,8 @@ nvt0 :: Nvt
 nvt0  = NvtContext {
     binary     = NvtOptBool True,
     echo       = NvtOptBool False,
+    width      = NvtOptInt 80,
+    height     = NvtOptInt 24,
     supGoAhead = NvtOptNothing
 }
 
@@ -59,6 +61,10 @@ nvtOptDoer  = NvtContext {
     binary     = \opt -> hSetBinaryMode stdin  (nvtOptBool opt) >>
                          hSetBinaryMode stdout (nvtOptBool opt),
     echo       = \opt -> hSetEcho stdout $ not (nvtOptBool opt),
+    width      = \opt -> hPutStrLn stderr $ ("width: " ++) $
+                         show (nvtOptInt opt),
+    height     = \opt -> hPutStrLn stderr $ ("width: " ++) $
+                         show (nvtOptInt opt),
     supGoAhead = undefined
 }
 
@@ -95,15 +101,15 @@ keyboardInput socket =
 
 forever :: Nvt -> Socket -> [Packet] -> IO ()
 forever nvt socket (p:ps) = do
-    let (nvt', mp) = step nvt p
+    let (nvt', ps') = step nvt p
     case p of
         PacketText text -> hPutStr   stdout text
-        otherwise       -> hPutStrLn stderr ("< " ++ (show p))
+        otherwise       -> hPutStrLn stderr ("recv: " ++ show p)
 
     -- Debug output
-    case mp of
-        Just p' -> hPutStrLn stderr ("> " ++ (show p')) >> sendPacket socket p'
-        Nothing -> return ()
+    mapM_ (\p -> hPutStrLn stderr ("send: " ++ show p) >>
+                 sendPacket socket p)
+          ps'
 
     -- Find edge triggered options from nvt to nvt'.
     let triggered = liftA2 edge nvt nvt'

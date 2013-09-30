@@ -2,6 +2,8 @@
 
 module Telnet.Internal.Utils where
 
+import Data.Char
+
 import Platform (replace)
 
 import Telnet.Consts
@@ -11,12 +13,21 @@ import Telnet.Consts
 -- foldlN and foldl1N also!
 foldlN :: (a -> b -> a) -> a -> NvtContext b -> a
 foldlN f z nvt =
-    z `f` binary nvt `f` echo nvt `f` supGoAhead nvt
+    z              `f`
+    binary     nvt `f`
+    echo       nvt `f`
+    supGoAhead nvt `f`
+    width      nvt `f`
+    height     nvt
 
 
 foldl1N :: (a -> a -> a) -> NvtContext a -> a
 foldl1N f nvt =
-    binary nvt `f` echo nvt `f` supGoAhead nvt
+    binary     nvt `f`
+    echo       nvt `f`
+    supGoAhead nvt `f`
+    width      nvt `f`
+    height     nvt
 
 
 ack :: Packet -> Packet
@@ -31,6 +42,19 @@ nak (PacketWill opt) = PacketDont opt
 nak (PacketDo   opt) = PacketWont opt
 nak (PacketWont opt) = PacketDont opt
 nak (PacketDont opt) = PacketWont opt
+
+
+-- NAWS : Negotiate About Window Size
+naws :: Int -> Int -> Packet
+naws width height = PacketSubOption subopt
+    where subopt  = rfc1073_WINDOW_SIZE : width' ++ height'
+          width'  = serialize_be16 width
+          height' = serialize_be16 height
+
+
+serialize_be16 :: Int -> String
+serialize_be16 x = [chr hi, chr lo]
+    where (hi, lo) = divMod x 256
 
 
 quote :: String -> String

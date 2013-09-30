@@ -28,6 +28,7 @@ rfc854_IAC      = '\255' :: CommandCode -- IAC
 rfc856_BINARY_TRANSMISSION = '\0' :: OptionCode
 rfc857_ECHO                = '\1' :: OptionCode
 rfc858_SUPPRESS_GOAHEAD    = '\3' :: OptionCode
+rfc1073_WINDOW_SIZE        = '\31' :: OptionCode
 
 
 data Packet = PacketNop
@@ -64,5 +65,9 @@ data NvtContext a = NvtContext {
     echo       :: a,
 
     -- RFC-858 Suppress GOAHEAD
-    supGoAhead :: a
+    supGoAhead :: a,
+
+    -- RFC-1073 Window Size
+    width      :: a,
+    height     :: a
 }

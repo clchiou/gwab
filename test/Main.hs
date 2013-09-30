@@ -77,7 +77,11 @@ instance Arbitrary NvtOpt where
 
 
 instance Arbitrary a => Arbitrary (NvtContext a) where
-    arbitrary = liftM3 NvtContext arbitrary arbitrary arbitrary
+    arbitrary = NvtContext <$> arbitrary <*>
+                               arbitrary <*>
+                               arbitrary <*>
+                               arbitrary <*>
+                               arbitrary
 
 
 edge' = liftA2 edge
