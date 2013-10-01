@@ -109,8 +109,7 @@ instance Functor NvtContext where
         binary     = f $ binary     a,
         echo       = f $ echo       a,
         supGoAhead = f $ supGoAhead a,
-        width      = f $ width      a,
-        height     = f $ height     a
+        windowSize = f $ windowSize a
     }
 
 
@@ -119,16 +118,14 @@ instance Applicative NvtContext where
         binary     = v,
         echo       = v,
         supGoAhead = v,
-        width      = v,
-        height     = v
+        windowSize = v
     }
 
     f <*> a = NvtContext {
         binary     = binary     f (binary     a),
         echo       = echo       f (echo       a),
         supGoAhead = supGoAhead f (supGoAhead a),
-        width      = width      f (width      a),
-        height     = height     f (height     a)
+        windowSize = windowSize f (windowSize a)
     }
 
 
@@ -149,8 +146,7 @@ nvtOptionName  = NvtContext {
     binary     = "binary",
     echo       = "echo",
     supGoAhead = "supGoAhead",
-    width      = "width",
-    height     = "height"
+    windowSize = "windowSize"
 }
 
 
@@ -175,8 +171,7 @@ negotiate nvt packet flag = (nvt', response:extra)
           makepkt   = select supported (pure ack) (pure nak)
           -- Compute extra response packets
           extra     = if isPktDo packet && opt == rfc1073_WINDOW_SIZE
-                      then [naws (nvtOptInt $ width  nvt)
-                                 (nvtOptInt $ height nvt)]
+                      then [uncurry naws (nvtOptPair $ windowSize nvt)]
                       else []
           isPktDo p = case p of
                       PacketDo _ -> True
@@ -188,8 +183,7 @@ nvtOptionCode  = NvtContext {
     binary     = rfc856_BINARY_TRANSMISSION,
     echo       = rfc857_ECHO,
     supGoAhead = rfc858_SUPPRESS_GOAHEAD,
-    width      = rfc1073_WINDOW_SIZE,
-    height     = rfc1073_WINDOW_SIZE
+    windowSize = rfc1073_WINDOW_SIZE
 }
 
 

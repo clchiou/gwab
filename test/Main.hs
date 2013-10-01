@@ -71,7 +71,7 @@ prop_identity2 ps = identity cs == cs
 instance Arbitrary NvtOpt where
     arbitrary = oneof [
         liftM  NvtOptBool   arbitrary,
-        liftM  NvtOptInt    arbitrary,
+        liftM  NvtOptPair   arbitrary,
         liftM  NvtOptString arbitrary,
         return NvtOptNothing]
 
@@ -80,19 +80,16 @@ instance Arbitrary a => Arbitrary (NvtContext a) where
     arbitrary = NvtContext <$> arbitrary <*>
                                arbitrary <*>
                                arbitrary <*>
-                               arbitrary <*>
                                arbitrary
 
 
 edge' = liftA2 edge
 zero  = pure NvtOptNothing
-not'  = liftA not''
-    where not'' (NvtOptBool   opt)             = NvtOptBool $ not opt
-          not'' (NvtOptInt    opt) | opt == 0  = NvtOptInt 1
-          not'' (NvtOptInt    opt) | opt /= 0  = NvtOptInt 0
-          not'' (NvtOptString opt) | opt == "" = NvtOptString " "
-          not'' (NvtOptString opt) | opt /= "" = NvtOptString ""
-          not'' NvtOptNothing                  = NvtOptNothing
+alter = liftA alter'
+    where alter' (NvtOptBool   opt) = NvtOptBool $ not opt
+          alter' (NvtOptPair   opt) = NvtOptPair (1 + fst opt, snd opt)
+          alter' (NvtOptString opt) = NvtOptString (opt ++ " ")
+          alter' NvtOptNothing      = NvtOptNothing
 
 
 prop_absorbing_element :: Nvt -> Bool
@@ -107,5 +104,5 @@ prop_zero_sum nvt = nvt `edge'` nvt == zero
 
 prop_edge_trigger :: Nvt -> Bool
 prop_edge_trigger nvt =
-    nvt      `edge'` not' nvt == not' nvt &&
-    not' nvt `edge'`      nvt ==      nvt
+    alter nvt `edge'`       nvt ==       nvt &&
+          nvt `edge'` alter nvt == alter nvt

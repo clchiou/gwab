@@ -11,7 +11,7 @@ import Telnet.Internal.Utils
 
 edge :: NvtOpt -> NvtOpt -> NvtOpt
 edge (NvtOptBool   p) opt@(NvtOptBool   q) | p /= q = opt
-edge (NvtOptInt    p) opt@(NvtOptInt    q) | p /= q = opt
+edge (NvtOptPair   p) opt@(NvtOptPair   q) | p /= q = opt
 edge (NvtOptString p) opt@(NvtOptString q) | p /= q = opt
 edge _                _                             = NvtOptNothing
 

@@ -49,9 +49,9 @@ data Packet = PacketNop
               deriving (Eq, Show)
 
 
-data NvtOpt = NvtOptBool   { nvtOptBool   :: Bool   }
-            | NvtOptInt    { nvtOptInt    :: Int    }
-            | NvtOptString { nvtOptString :: String }
+data NvtOpt = NvtOptBool   { nvtOptBool   :: Bool       }
+            | NvtOptPair   { nvtOptPair   :: (Int, Int) }
+            | NvtOptString { nvtOptString :: String     }
             | NvtOptNothing
               deriving (Eq, Show)
 
@@ -68,6 +68,5 @@ data NvtContext a = NvtContext {
     supGoAhead :: a,
 
     -- RFC-1073 Window Size
-    width      :: a,
-    height     :: a
+    windowSize :: a
 }

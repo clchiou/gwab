@@ -50,8 +50,7 @@ nvt0 :: Nvt
 nvt0  = NvtContext {
     binary     = NvtOptBool True,
     echo       = NvtOptBool False,
-    width      = NvtOptInt 80,
-    height     = NvtOptInt 24,
+    windowSize = NvtOptPair (80, 24),
     supGoAhead = NvtOptNothing
 }
 
@@ -61,10 +60,8 @@ nvtOptDoer  = NvtContext {
     binary     = \opt -> hSetBinaryMode stdin  (nvtOptBool opt) >>
                          hSetBinaryMode stdout (nvtOptBool opt),
     echo       = \opt -> hSetEcho stdout $ not (nvtOptBool opt),
-    width      = \opt -> hPutStrLn stderr $ ("width: " ++) $
-                         show (nvtOptInt opt),
-    height     = \opt -> hPutStrLn stderr $ ("width: " ++) $
-                         show (nvtOptInt opt),
+    windowSize = \opt -> hPutStrLn stderr $ ("windowSize: " ++) $
+                         show (nvtOptPair opt),
     supGoAhead = undefined
 }
 
