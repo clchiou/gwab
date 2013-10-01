@@ -51,6 +51,7 @@ nvt0  = NvtContext {
     binary     = NvtOptBool True,
     echo       = NvtOptBool False,
     windowSize = NvtOptPair (80, 24),
+    termType   = NvtOptString "VT100",
     supGoAhead = NvtOptNothing
 }
 
@@ -59,9 +60,9 @@ nvtOptDoer :: NvtContext (NvtOpt -> IO ())
 nvtOptDoer  = NvtContext {
     binary     = \opt -> hSetBinaryMode stdin  (nvtOptBool opt) >>
                          hSetBinaryMode stdout (nvtOptBool opt),
-    echo       = \opt -> hSetEcho stdout $ not (nvtOptBool opt),
-    windowSize = \opt -> hPutStrLn stderr $ ("windowSize: " ++) $
-                         show (nvtOptPair opt),
+    echo       = hSetEcho stdout . not . nvtOptBool,
+    windowSize = hPutStrLn stderr . ("windowSize: " ++) . show . nvtOptPair,
+    termType   = hPutStrLn stderr . ("termType: " ++) . nvtOptString,
     supGoAhead = undefined
 }
 
@@ -98,25 +99,32 @@ keyboardInput socket =
 
 forever :: Nvt -> Socket -> [Packet] -> IO ()
 forever nvt socket (p:ps) = do
+    -- Compute next state and output
     let (nvt', ps') = step nvt p
+    let triggered   = liftA2 edge nvt nvt'
     case p of
-        PacketText text -> hPutStr   stdout text
-        otherwise       -> hPutStrLn stderr ("recv: " ++ show p)
-
-    -- Debug output
-    mapM_ (\p -> hPutStrLn stderr ("send: " ++ show p) >>
-                 sendPacket socket p)
-          ps'
-
-    -- Find edge triggered options from nvt to nvt'.
-    let triggered = liftA2 edge nvt nvt'
-    hPutStrLn stderr $ ("triggered: " ++) $ show triggered
-
-    -- Now put trigger into effect.
+        PacketText text -> hPutStr stdout text
+        otherwise       -> return ()
+    mapM_ (sendPacket socket) ps'
     doNvtOpt triggered
 
+    -- Debug logs
+    case p of
+        PacketText text -> return ()
+        otherwise       -> hPutStrLn stderr ("recv: " ++ show p)
+    mapM_ (hPutStrLn stderr . ("send: " ++) . show) ps'
+    if_ (nvt /= nvt') $
+        (hPutStrLn stderr $ ("nvt : " ++) $ show nvt)
+    if_ (triggered /= pure NvtOptNothing) $
+        (hPutStrLn stderr $ ("trig: " ++) $ show triggered)
+
+    -- Next iteration
     forever nvt' socket ps
 forever _ _ _ = return ()
+
+
+if_ :: Bool -> IO () -> IO ()
+if_ pred io = if pred then io else return ()
 
 
 sendPacket :: Socket -> Packet -> IO ()

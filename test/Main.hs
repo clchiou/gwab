@@ -80,6 +80,7 @@ instance Arbitrary a => Arbitrary (NvtContext a) where
     arbitrary = NvtContext <$> arbitrary <*>
                                arbitrary <*>
                                arbitrary <*>
+                               arbitrary <*>
                                arbitrary
 
 

@@ -17,7 +17,8 @@ foldlN f z nvt =
     binary     nvt `f`
     echo       nvt `f`
     supGoAhead nvt `f`
-    windowSize nvt
+    windowSize nvt `f`
+    termType   nvt
 
 
 foldl1N :: (a -> a -> a) -> NvtContext a -> a
@@ -25,7 +26,8 @@ foldl1N f nvt =
     binary     nvt `f`
     echo       nvt `f`
     supGoAhead nvt `f`
-    windowSize nvt
+    windowSize nvt `f`
+    termType   nvt
 
 
 ack :: Packet -> Packet

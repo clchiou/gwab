@@ -25,10 +25,11 @@ rfc854_DONT     = '\254' :: CommandCode -- DON'T
 rfc854_IAC      = '\255' :: CommandCode -- IAC
 
 
-rfc856_BINARY_TRANSMISSION = '\0' :: OptionCode
-rfc857_ECHO                = '\1' :: OptionCode
-rfc858_SUPPRESS_GOAHEAD    = '\3' :: OptionCode
+rfc856_BINARY_TRANSMISSION = '\0'  :: OptionCode
+rfc857_ECHO                = '\1'  :: OptionCode
+rfc858_SUPPRESS_GOAHEAD    = '\3'  :: OptionCode
 rfc1073_WINDOW_SIZE        = '\31' :: OptionCode
+rfc1091_TERMINAL_TYPE      = '\24' :: OptionCode
 
 
 data Packet = PacketNop
@@ -60,13 +61,12 @@ type Nvt          = NvtContext NvtOpt
 data NvtContext a = NvtContext {
     -- RFC-856 Binary Transmission
     binary     :: a,
-
     -- RFC-857 ECHO
     echo       :: a,
-
     -- RFC-858 Suppress GOAHEAD
     supGoAhead :: a,
-
     -- RFC-1073 Window Size
-    windowSize :: a
+    windowSize :: a,
+    -- RFC-1091 Terminal Type
+    termType   :: a
 }
