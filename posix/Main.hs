@@ -40,6 +40,8 @@ import System.IO (
 import System.Environment (getArgs)
 import System.IO.Unsafe (unsafeInterleaveIO)
 
+import Platform (replace)
+
 import Telnet
 import Telnet.Utils
 
@@ -93,8 +95,12 @@ main = do
 
 keyboardInput :: Socket -> IO ()
 keyboardInput socket =
-    hGetChar stdin >>= send socket . Char8.singleton >>
+    hGetChar stdin >>= send socket . Char8.pack . crlf >>
     keyboardInput socket
+
+
+crlf :: Char -> String
+crlf c = if c == '\n' then "\r\0" else [c]
 
 
 forever :: Nvt -> Socket -> [Packet] -> IO ()
