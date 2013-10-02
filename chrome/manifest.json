@@ -1,0 +1,18 @@
+{
+  "name": "Gwab Telnet Client",
+  "version": "0.0.0",
+  "manifest_version": 2,
+  "minimum_chrome_version": "29",
+  "app": {
+    "background": {
+      "scripts": ["launch.js"],
+      "transient": true
+    }
+  },
+  "permissions": [
+    "experimental",
+    {"socket": [
+      "tcp-connect:*:*"
+    ]}
+  ]
+}
