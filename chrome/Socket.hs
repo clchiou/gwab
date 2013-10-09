@@ -6,6 +6,7 @@ module Socket (
     disconnect,
     recv,
     send,
+    watch,
 ) where
 
 import Haste
@@ -32,6 +33,9 @@ foreign import ccall js_recv :: Int -> IO JSString
 foreign import ccall js_send :: Int -> JSString -> JSFun (Int -> IO ()) -> IO ()
 
 
+foreign import ccall js_watch :: Int -> JSFun (IO ()) -> IO ()
+
+
 resolve :: String -> (String -> IO ()) -> IO ()
 resolve host cb = js_resolve (toJSString host) (mkCallback js_cb)
     where js_cb = cb . fromJSStr
@@ -51,3 +55,7 @@ recv fd = js_recv fd >>= return . fromJSStr
 
 send :: Int -> String -> (Int -> IO ()) -> IO ()
 send fd msg cb = js_send fd (toJSStr msg) (mkCallback cb)
+
+
+watch :: Int -> IO () -> IO ()
+watch fd cb = js_watch fd (mkCallback cb)

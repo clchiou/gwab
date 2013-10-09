@@ -3,7 +3,6 @@
 module Main where
 
 import Haste
-import Haste.Prim
 
 import Control.Monad (when)
 
@@ -13,21 +12,30 @@ import Socket
 import Utils
 
 
-main = do
-    resolve "aardmud.org" (\addr ->
-            connect addr 4000 (\fd resultCode -> do
-                logging $ "fd="         ++ show fd         ++ ", " ++
-                          "resultCode=" ++ show resultCode ++ "\n"
-                when (fd /= 0) (doSomething fd "")))
+host :: String
+host = "aardmud.org"
 
 
--- XXX: This does NOT work because it does not yield and so socket never gets
--- read!
-doSomething fd message =
-    recv fd >>= \msg ->
-    let message' = message ++ msg
-    in do
-    logging $ "message: " ++ message' ++ "\n"
-    if length message' < 32
-    then doSomething fd message'
-    else disconnect fd
+port :: Int
+port = 4000
+
+
+main = resolve host onResolvedAddress
+    where
+        onResolvedAddress addr =
+            connect addr port onConnected
+        onConnected fd resultCode = do
+            writeLog $ "onConnected: " ++
+                       "fd="           ++ show fd         ++ ", " ++
+                       "resultCode="   ++ show resultCode
+            setTimeout 10000 (onTimeout fd)
+            when (fd /= 0) $ watch fd (onWatch fd 0)
+        onWatch fd cnt = do
+            message <- recv fd
+            writeLog $ "onWatch: message=" ++ message
+            if cnt < 2
+            then watch fd (onWatch fd (cnt + 1))
+            else disconnect fd
+        onTimeout fd = do
+            writeLog $ "onTimeout: fd=" ++ show fd
+            disconnect fd

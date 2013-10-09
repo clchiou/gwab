@@ -1,15 +1,13 @@
 -- Copyright (C) 2013 Che-Liang Chiou.
 
 module Utils (
-    logging,
+    timeout,
 ) where
 
 import Haste
-import Haste.Prim
 
 
-foreign import ccall js_logging :: JSString -> IO ()
+foreign import ccall js_timeout :: Int -> JSFun (IO ()) -> IO ()
 
 
-logging :: String -> IO ()
-logging = js_logging . toJSStr
+timeout t cb = js_timeout t (mkCallback cb)
