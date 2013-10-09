@@ -5,36 +5,29 @@ module Main where
 import Haste
 import Haste.Prim
 
+import Control.Monad (when)
+
 import Telnet
 
-foreign import ccall js_logging :: JSString -> IO ()
-
-foreign import ccall js_resolve :: JSString ->
-                                   JSFun (JSString -> IO ()) ->
-                                   IO ()
-
-foreign import ccall js_connect :: JSString ->
-                                   Int ->
-                                   JSFun (Int -> Int -> IO ()) ->
-                                   IO ()
-
-
-logging :: String -> IO ()
-logging = js_logging . toJSStr
-
-
-resolve :: String -> (String -> IO ()) -> IO ()
-resolve host cb = js_resolve (toJSString host) (mkCallback js_cb)
-    where js_cb = cb . fromJSStr
-
-
-connect :: String -> Int -> (Int -> Int -> IO ()) -> IO ()
-connect addr port cb = js_connect (toJSStr addr) port (mkCallback cb)
+import Socket
+import Utils
 
 
 main = do
-    logging "Hello world"
-    resolve "ptt.cc" (\addr -> connect addr 23 showConnect)
-    where showConnect socketId resultCode =
-            logging $ "socketId="   ++ (show socketId) ++ ", " ++
-                      "resultCode=" ++ (show resultCode)
+    resolve "aardmud.org" (\addr ->
+            connect addr 4000 (\fd resultCode -> do
+                logging $ "fd="         ++ show fd         ++ ", " ++
+                          "resultCode=" ++ show resultCode ++ "\n"
+                when (fd /= 0) (doSomething fd "")))
+
+
+-- XXX: This does NOT work because it does not yield and so socket never gets
+-- read!
+doSomething fd message =
+    recv fd >>= \msg ->
+    let message' = message ++ msg
+    in do
+    logging $ "message: " ++ message' ++ "\n"
+    if length message' < 32
+    then doSomething fd message'
+    else disconnect fd
