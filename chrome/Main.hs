@@ -9,7 +9,6 @@ import Control.Monad (when)
 import Telnet
 
 import Socket
-import Utils
 
 
 host :: String
@@ -20,22 +19,37 @@ port :: Int
 port = 4000
 
 
-main = resolve host onResolvedAddress
-    where
-        onResolvedAddress addr =
-            connect addr port onConnected
-        onConnected fd resultCode = do
-            writeLog $ "onConnected: " ++
-                       "fd="           ++ show fd         ++ ", " ++
-                       "resultCode="   ++ show resultCode
-            setTimeout 10000 (onTimeout fd)
-            when (fd /= 0) $ watch fd (onWatch fd 0)
-        onWatch fd cnt = do
-            message <- recv fd
-            writeLog $ "onWatch: message=" ++ message
-            if cnt < 2
-            then watch fd (onWatch fd (cnt + 1))
-            else disconnect fd
-        onTimeout fd = do
-            writeLog $ "onTimeout: fd=" ++ show fd
-            disconnect fd
+poller :: Int -> Int -> IO ()
+poller interval fd = poller' 2 where
+
+    poller' cnt = recv fd (cb cnt)
+
+    cb cnt resultCode message =
+        if resultCode == 0
+        then writeLog "poller: Could not read from socket"
+        else when (length message > 0)
+                  (writeLog $ "poller: message=" ++ message)
+             >>
+             when (cnt > 0)
+                  (nextPoll (cnt - 1))
+
+    nextPoll cnt = setTimeout interval (poller' cnt)
+
+
+main = onStartup where
+
+    onStartup =
+        resolve host onResolveAddress
+
+    onResolveAddress addr =
+        connect addr port onConnect
+
+    onConnect fd resultCode = do
+        writeLog $ "onConnect: " ++
+                   "fd="         ++ show fd         ++ ", " ++
+                   "resultCode=" ++ show resultCode
+        when (fd /= 0) (start fd)
+
+    start fd = do
+        poller 500 fd
+        setTimeout 10000 (disconnect fd)
