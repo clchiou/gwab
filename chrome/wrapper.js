@@ -8,6 +8,31 @@ var socket = chrome.socket || chrome.experimental.socket;
 var dns = chrome.experimental.dns;
 
 
+var Storage = {};
+
+
+function js_get(key) { return Storage[key]; }
+var js_getBool   = js_get
+var js_getInt    = js_get
+var js_getString = js_get
+
+
+function js_put(key, value) { Storage[key] = value; }
+var js_putBool   = js_put
+var js_putInt    = js_put
+var js_putString = js_put
+
+
+function js_setInterval(msecs, callback) {
+  return setInterval(function () { A(callback, [0]); }, msecs);
+}
+
+
+function js_clearInterval(id) {
+  clearInterval(id);
+}
+
+
 function js_resolve(host, callback) {
   dns.resolve(host, function(result) {
     A(callback, [[0, result.address], 0]);

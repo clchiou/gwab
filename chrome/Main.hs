@@ -9,6 +9,8 @@ import Control.Monad (when)
 import Telnet
 
 import Socket
+import Store
+import Utils
 
 
 host :: String
@@ -19,21 +21,18 @@ port :: Int
 port = 4000
 
 
-poller :: Int -> Int -> IO ()
-poller interval fd = poller' 2 where
+timerId :: String
+timerId = "timerId"
 
-    poller' cnt = recv fd (cb cnt)
 
-    cb cnt resultCode message =
+poller :: Int -> IO ()
+poller fd = recv fd cb where
+    cb resultCode message = do
+        writeLog "poller: Poll..."
         if resultCode == 0
         then writeLog "poller: Could not read from socket"
         else when (length message > 0)
                   (writeLog $ "poller: message=" ++ message)
-             >>
-             when (cnt > 0)
-                  (nextPoll (cnt - 1))
-
-    nextPoll cnt = setTimeout interval (poller' cnt)
 
 
 main = onStartup where
@@ -45,11 +44,18 @@ main = onStartup where
         connect addr port onConnect
 
     onConnect fd resultCode = do
-        writeLog $ "onConnect: " ++
+        writeLog $ "main: "      ++
                    "fd="         ++ show fd         ++ ", " ++
                    "resultCode=" ++ show resultCode
         when (fd /= 0) (start fd)
 
     start fd = do
-        poller 500 fd
-        setTimeout 10000 (disconnect fd)
+        timerId' <- setInterval 500 (poller fd)
+        putInt timerId timerId'
+        setTimeout 10000 (exit fd)
+
+    exit fd = do
+        writeLog "main: Exit!"
+        timerId' <- getInt timerId
+        clearInterval timerId'
+        disconnect fd
