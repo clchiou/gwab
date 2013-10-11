@@ -33,7 +33,7 @@ foreign import ccall js_send :: Int -> JSString -> JSFun (Int -> IO ()) -> IO ()
 
 
 resolve :: String -> (String -> IO ()) -> IO ()
-resolve host cb = js_resolve (toJSString host) (mkCallback js_cb)
+resolve host cb = js_resolve (toJSStr host) (mkCallback js_cb)
     where js_cb = cb . fromJSStr
 
 

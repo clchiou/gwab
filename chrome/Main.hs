@@ -25,14 +25,27 @@ timerId :: String
 timerId = "timerId"
 
 
-poller :: Int -> IO ()
-poller fd = recv fd cb where
+incomingMessage :: String
+incomingMessage = "incomingMessage"
+
+
+poll :: Int -> IO ()
+poll fd = recv fd cb where
     cb resultCode message = do
-        writeLog "poller: Poll..."
+        writeLog "poll: Polling..."
         if resultCode == 0
-        then writeLog "poller: Could not read from socket"
+        then writeLog "poll: Could not read from socket"
         else when (length message > 0)
-                  (writeLog $ "poller: message=" ++ message)
+                  (getString incomingMessage >>=
+                   putString incomingMessage . (++ message))
+
+
+gwab :: IO ()
+gwab = do
+    message <- getString incomingMessage
+    when (length message > 0)
+         (mapM_ (writeLog . show) $ parse message)
+    putString incomingMessage ""
 
 
 main = onStartup where
@@ -43,18 +56,28 @@ main = onStartup where
     onResolveAddress addr =
         connect addr port onConnect
 
-    onConnect fd resultCode = do
+
+onConnect fd resultCode = onConnect' where
+
+    onConnect' = do
         writeLog $ "main: "      ++
                    "fd="         ++ show fd         ++ ", " ++
                    "resultCode=" ++ show resultCode
-        when (fd /= 0) (start fd)
+        when (fd /= 0) start
 
-    start fd = do
-        timerId' <- setInterval 500 (poller fd)
+    start = do
+        putString incomingMessage ""
+
+        timerId' <- setInterval 500 periodic
         putInt timerId timerId'
-        setTimeout 10000 (exit fd)
 
-    exit fd = do
+        setTimeout 10000 exit
+
+    periodic = do
+        poll fd
+        gwab
+
+    exit = do
         writeLog "main: Exit!"
         timerId' <- getInt timerId
         clearInterval timerId'

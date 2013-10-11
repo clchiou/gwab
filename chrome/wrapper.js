@@ -79,10 +79,13 @@ function js_recv(socketId, callback) {
       A(callback, [[0, readInfo.resultCode], [0, ''], 0]);
       return;
     }
-    arrayBufferToString(readInfo.data, function (str) {
-      // NOTE: str could be empty!
-      A(callback, [[0, readInfo.resultCode], [0, str], 0]);
-    });
+    var rawData = new Uint8Array(readInfo.data);
+    var str = [];
+    for (var i = 0; i < rawData.length; i++) {
+      str.push(String.fromCharCode(rawData[i]));
+    }
+    str = str.join('');
+    A(callback, [[0, readInfo.resultCode], [0, str], 0]);
   });
 }
 
@@ -94,14 +97,4 @@ function stringToArrayBuffer(str, callback) {
     callback(e.target.result);
   };
   fileReader.readAsArrayBuffer(blob);
-}
-
-
-function arrayBufferToString(buf, callback) {
-  var blob = new Blob([new Uint8Array(buf)]);
-  var fileReader = new FileReader();
-  fileReader.onload = function(e) {
-    callback(e.target.result);
-  }
-  fileReader.readAsText(blob);
 }
