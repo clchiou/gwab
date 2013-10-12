@@ -46,7 +46,7 @@ onKeypress :: Int -> Int -> IO ()
 onKeypress fd key = send fd msg cb where
     msg  = if key' == '\n' then "\r\0" else [key']
     key' = chr key
-    cb bytes = writeLog $ "input: Send " ++ show bytes ++ " bytes"
+    cb bytes = writeLog $ "onKeypress: msg=" ++ msg ++ " bytes=" ++ show bytes
 
 
 gwab :: IO ()
@@ -75,7 +75,10 @@ onConnect fd resultCode = onConnect' where
         when (fd /= 0) start
 
     start = do
-        j "#target" >>= keypress (onKeypress fd)
+        j "#target"
+            >>= keypress (onKeypress fd)
+            >>= keyup    (writeLog . ("keyup: "   ++) . show)
+            >>= keydown  (writeLog . ("keydown: " ++) . show)
 
         putString incomingMessage ""
 

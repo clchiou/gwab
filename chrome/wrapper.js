@@ -8,13 +8,13 @@ var js_jquery = $;
 
 
 function jquery_on(events, elements, callback) {
-  elements.on(events, function(event) {
+  return elements.on(events, function(event) {
     A(callback, [[0, event.which], 0]);
   });
 }
-js_keyup    = jquery_on.bind(window, 'keyup');
-js_keydown  = jquery_on.bind(window, 'keydown');
-js_keypress = jquery_on.bind(window, 'keypress');
+var js_keyup    = jquery_on.bind(window, 'keyup');
+var js_keydown  = jquery_on.bind(window, 'keydown');
+var js_keypress = jquery_on.bind(window, 'keypress');
 
 
 //// Store
