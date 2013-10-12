@@ -28,7 +28,6 @@ import Telnet.Internal.Utils
 --
 
 
--- NOTE: Errors of input are ignored; we shift one left and keep parsing.
 parse :: String -> FilterResult Packet
 parse input =
     case runFilter filterTelnet input of
@@ -171,18 +170,13 @@ negotiate nvt packet flag = (nvt', response:extra)
           matched   = liftA2 (==) nvtOptionCode $ pure opt
           supported = fmap (/= NvtOptNothing) nvt
           -- Compute new nvt state
-          nvt'      = select (matched &&& isBoolOpt) flag' nvt
+          nvt'      = select (matched &&& negotiable) flag' nvt
           flag'     = pure (NvtOptBool flag)
           -- Compute response packet
-          response  = pick nak matched makepkt packet
+          response  = (pick nak matched makepkt) packet
           makepkt   = select supported (pure ack) (pure nak)
           -- Compute extra response packets
-          extra     = if isPktDo packet && opt == rfc1073_WINDOW_SIZE
-                      then [uncurry naws (nvtOptPair $ windowSize nvt)]
-                      else []
-          isPktDo p = case p of
-                      PacketDo _ -> True
-                      _          -> False
+          extra     = unJust $ reportWindowSize nvt packet
           -- Helper table
           nvtOptionCode  = NvtContext {
               binary     = rfc856_BINARY_TRANSMISSION,
@@ -191,26 +185,39 @@ negotiate nvt packet flag = (nvt', response:extra)
               windowSize = rfc1073_WINDOW_SIZE,
               termType   = rfc1091_TERMINAL_TYPE
           }
-          isBoolOpt      = NvtContext {
+          negotiable     = NvtContext {
               binary     = True,
               echo       = True,
               supGoAhead = True,
               windowSize = False,
               termType   = False
           }
+          -- Helper function
+          unJust (Just p) = [p]
+          unJust Nothing  = []
+
+
+reportWindowSize :: Nvt -> Packet -> Maybe Packet
+reportWindowSize nvt (PacketDo opt)
+    | opt == rfc1073_WINDOW_SIZE =
+        case windowSize nvt of
+            (NvtOptPair (w, h)) -> Just $ naws w h
+            _                   -> Nothing
+    | otherwise                  = Nothing
+reportWindowSize _   _           = Nothing
 
 
 subnegotiate :: Nvt -> Packet -> (Nvt, [Packet])
-subnegotiate nvt packet =
-    if subOption packet /= [rfc1091_TERMINAL_TYPE, '\1']
-    then (nvt, [])
-    else (nvt, [PacketSubOption (rfc1091_TERMINAL_TYPE:'\0':termTypeStr)])
-    where termTypeStr = nvtOptString $ termType nvt
+subnegotiate nvt packet
+    | subOption packet /= [rfc1091_TERMINAL_TYPE, '\1'] = (nvt, [])
+    | otherwise                                         =
+        (nvt, [PacketSubOption (rfc1091_TERMINAL_TYPE:'\0':termType')])
+            where termType' = nvtOptString $ termType nvt
 
 
 select :: NvtContext Bool -> NvtContext a -> NvtContext a -> NvtContext a
 select pred then_ else_ = liftA3 select' pred then_ else_
-    where select' pred then_ else_ = if pred then then_ else else_
+    where select' a b c = if a then b else c
 
 
 pick :: a -> NvtContext Bool -> NvtContext a -> a
