@@ -32,6 +32,24 @@ foldl1N f nvt =
     termType   nvt
 
 
+getOpt :: OptionCode -> NvtContext a -> a
+getOpt optCode nvt
+    | optCode == rfc856_BINARY_TRANSMISSION = binary     nvt
+    | optCode == rfc857_ECHO                = echo       nvt
+    | optCode == rfc858_SUPPRESS_GOAHEAD    = supGoAhead nvt
+    | optCode == rfc1073_WINDOW_SIZE        = windowSize nvt
+    | optCode == rfc1091_TERMINAL_TYPE      = termType   nvt
+
+
+setOpt :: OptionCode -> a -> NvtContext a -> NvtContext a
+setOpt optCode newOpt nvt
+    | optCode == rfc856_BINARY_TRANSMISSION = nvt{binary    =newOpt}
+    | optCode == rfc857_ECHO                = nvt{echo      =newOpt}
+    | optCode == rfc858_SUPPRESS_GOAHEAD    = nvt{supGoAhead=newOpt}
+    | optCode == rfc1073_WINDOW_SIZE        = nvt{windowSize=newOpt}
+    | optCode == rfc1091_TERMINAL_TYPE      = nvt{termType  =newOpt}
+
+
 ack :: Packet -> Packet
 ack (PacketWill opt) = PacketDo   opt
 ack (PacketDo   opt) = PacketWill opt

@@ -68,7 +68,7 @@ nvt0  = NvtContext {
     echo       = NvtOptBool False,
     windowSize = NvtOptPair (80, 24),
     termType   = NvtOptString "VT100",
-    supGoAhead = NvtOptBool True
+    supGoAhead = NvtOptAlways True
 }
 
 
@@ -79,8 +79,7 @@ nvtOptDoer  = NvtContext {
     echo       = hSetEcho stdout . not . nvtOptBool,
     windowSize = writeLog . ("windowSize: " ++) . show . nvtOptPair,
     termType   = writeLog . ("termType: "   ++) . nvtOptString,
-    -- We cheat here that we respond to supGoAhead but do not implement it!
-    supGoAhead = writeLog . ("supGoAhead: " ++) . show . nvtOptBool
+    supGoAhead = writeLog . ("supGoAhead: " ++) . show . nvtOptAlways
 }
 
 

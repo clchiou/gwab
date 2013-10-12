@@ -120,6 +120,7 @@ prop_identity2 ps = identity cs == cs
 instance Arbitrary NvtOpt where
     arbitrary = oneof [
         liftM  NvtOptBool   arbitrary,
+        liftM  NvtOptAlways arbitrary,
         liftM  NvtOptPair   arbitrary,
         liftM  NvtOptString arbitrary,
         return NvtOptNothing]
@@ -137,6 +138,7 @@ edge' = liftA2 edge
 zero  = pure NvtOptNothing
 alter = liftA alter'
     where alter' (NvtOptBool   opt) = NvtOptBool $ not opt
+          alter' (NvtOptAlways opt) = NvtOptAlways $ not opt
           alter' (NvtOptPair   opt) = NvtOptPair (1 + fst opt, snd opt)
           alter' (NvtOptString opt) = NvtOptString (opt ++ " ")
           alter' NvtOptNothing      = NvtOptNothing

@@ -165,46 +165,40 @@ step nvt _                          = (nvt, [])
 
 
 negotiate :: Nvt -> Packet -> Bool -> (Nvt, [Packet])
-negotiate nvt packet flag = (nvt', response:extra)
-    where opt       = optionCode packet
-          matched   = liftA2 (==) nvtOptionCode $ pure opt
-          supported = fmap (/= NvtOptNothing) nvt
-          -- Compute new nvt state
-          nvt'      = select (matched &&& negotiable) flag' nvt
-          flag'     = pure (NvtOptBool flag)
-          -- Compute response packet
-          response  = (pick nak matched makepkt) packet
-          makepkt   = select supported (pure ack) (pure nak)
-          -- Compute extra response packets
-          extra     = unJust $ reportWindowSize nvt packet
-          -- Helper table
-          nvtOptionCode  = NvtContext {
-              binary     = rfc856_BINARY_TRANSMISSION,
-              echo       = rfc857_ECHO,
-              supGoAhead = rfc858_SUPPRESS_GOAHEAD,
-              windowSize = rfc1073_WINDOW_SIZE,
-              termType   = rfc1091_TERMINAL_TYPE
-          }
-          negotiable     = NvtContext {
-              binary     = True,
-              echo       = True,
-              supGoAhead = True,
-              windowSize = False,
-              termType   = False
-          }
-          -- Helper function
-          unJust (Just p) = [p]
-          unJust Nothing  = []
+negotiate nvt packet newFlag
+    | elem optCode boolOption        = (nvt', packets')
+    | optCode == rfc1073_WINDOW_SIZE = (nvt, packets'')
+    | otherwise                      = (nvt, [nak packet])
+      where
+        optCode            = optionCode packet
+
+        -- Boolean options
+        (nvtOpt', packet') = negotiate' optCode packet newFlag nvtOpt
+        nvt'               = setOpt optCode nvtOpt' nvt
+        packets'           = [packet']
+        nvtOpt             = getOpt optCode nvt
+        boolOption         = [rfc856_BINARY_TRANSMISSION,
+                              rfc857_ECHO,
+                              rfc858_SUPPRESS_GOAHEAD]
+
+        -- RFC-1073 Window Size
+        packets'' = case windowSize nvt of
+            (NvtOptPair (w, h)) -> [ack packet, naws w h]
+            _                   -> [nak packet]
 
 
-reportWindowSize :: Nvt -> Packet -> Maybe Packet
-reportWindowSize nvt (PacketDo opt)
-    | opt == rfc1073_WINDOW_SIZE =
-        case windowSize nvt of
-            (NvtOptPair (w, h)) -> Just $ naws w h
-            _                   -> Nothing
-    | otherwise                  = Nothing
-reportWindowSize _   _           = Nothing
+negotiate' :: OptionCode -> Packet -> Bool -> NvtOpt -> (NvtOpt, Packet)
+
+negotiate' optCode packet newFlag (NvtOptBool _) =
+    (NvtOptBool newFlag, ack packet)
+
+negotiate' optCode packet newFlag nvtOpt@(NvtOptAlways flag) =
+    if newFlag == flag
+    then (nvtOpt, ack packet)
+    else (nvtOpt, nak packet)
+
+negotiate' _       packet _       nvtOpt@(NvtOptNothing) =
+    (nvtOpt, nak packet)
 
 
 subnegotiate :: Nvt -> Packet -> (Nvt, [Packet])
@@ -213,17 +207,3 @@ subnegotiate nvt packet
     | otherwise                                         =
         (nvt, [PacketSubOption (rfc1091_TERMINAL_TYPE:'\0':termType')])
             where termType' = nvtOptString $ termType nvt
-
-
-select :: NvtContext Bool -> NvtContext a -> NvtContext a -> NvtContext a
-select pred then_ else_ = liftA3 select' pred then_ else_
-    where select' a b c = if a then b else c
-
-
-pick :: a -> NvtContext Bool -> NvtContext a -> a
-pick zero pred candidate = foldlN pick' zero (liftA2 (,) pred candidate)
-    where pick' z (p, c) = if p then c else z
-
-
-(&&&) :: NvtContext Bool -> NvtContext Bool -> NvtContext Bool
-(&&&) = liftA2 (&&)

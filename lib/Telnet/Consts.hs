@@ -51,6 +51,7 @@ data Packet = PacketNop
 
 
 data NvtOpt = NvtOptBool   { nvtOptBool   :: Bool       }
+            | NvtOptAlways { nvtOptAlways :: Bool       }
             | NvtOptPair   { nvtOptPair   :: (Int, Int) }
             | NvtOptString { nvtOptString :: String     }
             | NvtOptNothing
