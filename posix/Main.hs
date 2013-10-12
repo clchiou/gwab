@@ -3,7 +3,12 @@
 module Main where
 
 import Control.Applicative
-import Control.Concurrent (forkIO, killThread)
+import Control.Concurrent (
+        forkIO,
+        killThread)
+import Control.Monad (
+        foldM_,
+        when)
 import Data.ByteString.Char8 as Char8 (
         ByteString,
         null,
@@ -27,6 +32,7 @@ import Network.Socket.ByteString (
         sendAll)
 import System.IO (
         BufferMode(..),
+        IOMode(..),
         hGetChar,
         hPutChar,
         hPutStr,
@@ -34,16 +40,24 @@ import System.IO (
         hSetBinaryMode,
         hSetBuffering,
         hSetEcho,
-        stderr,
+        openFile,
         stdin,
         stdout)
 import System.Environment (getArgs)
-import System.IO.Unsafe (unsafeInterleaveIO)
+import System.IO.Unsafe (
+        unsafeInterleaveIO,
+        unsafePerformIO)
 
 import Platform (replace)
 
 import Telnet
 import Telnet.Utils
+
+
+logFile = unsafePerformIO $ openFile "log" WriteMode
+
+writeLog :: String -> IO ()
+writeLog = hPutStrLn logFile
 
 
 -- The default value of binary transmission is not RFC's default value, but we
@@ -54,7 +68,7 @@ nvt0  = NvtContext {
     echo       = NvtOptBool False,
     windowSize = NvtOptPair (80, 24),
     termType   = NvtOptString "VT100",
-    supGoAhead = NvtOptNothing
+    supGoAhead = NvtOptBool True
 }
 
 
@@ -63,9 +77,10 @@ nvtOptDoer  = NvtContext {
     binary     = \opt -> hSetBinaryMode stdin  (nvtOptBool opt) >>
                          hSetBinaryMode stdout (nvtOptBool opt),
     echo       = hSetEcho stdout . not . nvtOptBool,
-    windowSize = hPutStrLn stderr . ("windowSize: " ++) . show . nvtOptPair,
-    termType   = hPutStrLn stderr . ("termType: " ++) . nvtOptString,
-    supGoAhead = undefined
+    windowSize = writeLog . ("windowSize: " ++) . show . nvtOptPair,
+    termType   = writeLog . ("termType: "   ++) . nvtOptString,
+    -- We cheat here that we respond to supGoAhead but do not implement it!
+    supGoAhead = writeLog . ("supGoAhead: " ++) . show . nvtOptBool
 }
 
 
@@ -81,7 +96,9 @@ main = do
     let host = args !! 0
     let port = args !! 1
 
-    hPutStrLn stderr (show nvt0)
+    hSetBuffering logFile NoBuffering
+
+    writeLog $ "nvt0: " ++ show nvt0
     doNvtOpt nvt0
 
     hSetBuffering stdin  NoBuffering
@@ -89,8 +106,34 @@ main = do
 
     runWithSocket host port $ \socket -> do
     threadId <- forkIO $ keyboardInput socket
-    lazyRecvAll socket >>= forever nvt0 socket . parse'
+    lazyRecvAll socket >>= foldM_ (wrapIter socket) nvt0 . parse'
     killThread threadId
+
+
+wrapIter :: Socket -> (Nvt -> Packet -> IO Nvt)
+wrapIter socket = iter where
+    iter nvt packet = do
+        -- Compute next state and output
+        let (nvt', ps) = step nvt packet
+        let triggered  = liftA2 edge nvt nvt'
+        case packet of
+            PacketText text -> hPutStr stdout text
+            otherwise       -> return ()
+        mapM_ (sendPacket socket) ps
+        doNvtOpt triggered
+
+        -- Debug logs
+        case packet of
+            PacketText text -> writeLog $ "text: " ++ show text
+            otherwise       -> writeLog $ "recv: " ++ show packet
+        mapM_ (writeLog . ("send: " ++) . show) ps
+        when (nvt /= nvt')
+             (writeLog $ "nvt : " ++ show nvt)
+        when (triggered /= pure NvtOptNothing)
+             (writeLog $ "trig: " ++ show triggered)
+
+        -- Next iteration
+        return nvt'
 
 
 parse' :: String -> [Packet]
@@ -103,43 +146,15 @@ parse' _ = []
 
 
 keyboardInput :: Socket -> IO ()
-keyboardInput socket =
-    hGetChar stdin >>= send socket . Char8.pack . crlf >>
+keyboardInput socket = do
+    c <- hGetChar stdin
+    writeLog $ "key : " ++ show c
+    send socket $ Char8.pack $ crlf c
     keyboardInput socket
 
 
 crlf :: Char -> String
 crlf c = if c == '\n' then "\r\0" else [c]
-
-
-forever :: Nvt -> Socket -> [Packet] -> IO ()
-forever nvt socket (p:ps) = do
-    -- Compute next state and output
-    let (nvt', ps') = step nvt p
-    let triggered   = liftA2 edge nvt nvt'
-    case p of
-        PacketText text -> hPutStr stdout text
-        otherwise       -> return ()
-    mapM_ (sendPacket socket) ps'
-    doNvtOpt triggered
-
-    -- Debug logs
-    case p of
-        PacketText text -> return ()
-        otherwise       -> hPutStrLn stderr ("recv: " ++ show p)
-    mapM_ (hPutStrLn stderr . ("send: " ++) . show) ps'
-    if_ (nvt /= nvt') $
-        (hPutStrLn stderr $ ("nvt : " ++) $ show nvt)
-    if_ (triggered /= pure NvtOptNothing) $
-        (hPutStrLn stderr $ ("trig: " ++) $ show triggered)
-
-    -- Next iteration
-    forever nvt' socket ps
-forever _ _ _ = return ()
-
-
-if_ :: Bool -> IO () -> IO ()
-if_ pred io = if pred then io else return ()
 
 
 sendPacket :: Socket -> Packet -> IO ()
