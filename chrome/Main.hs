@@ -53,8 +53,17 @@ gwab :: IO ()
 gwab = do
     message <- getString incomingMessage
     when (length message > 0)
-         (mapM_ (writeLog . show) $ parse message)
+         (mapM_ (writeLog . show) $ parse' message)
     putString incomingMessage ""
+
+
+parse' :: String -> [Packet]
+parse' str@(_:_) = packet : parse' rest
+    where (packet, rest)               = unpack $ parse str
+          unpack (Right result       ) = result
+          unpack (Left  (Err reason) ) = error reason
+          unpack (Left  NeedMoreInput) = error "Need more input"
+parse' _ = []
 
 
 main = onStartup where

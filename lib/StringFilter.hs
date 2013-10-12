@@ -1,63 +1,84 @@
 -- Copyright (C) 2013 Che-Liang Chiou.
 
 module StringFilter (
+    Error(..),
+    FilterResult,
     StringFilter,
     runFilter,
-    withInput
+    withInput,
 ) where
 
 import Control.Monad
 
 
-data StringFilterState = StringFilterState {
+newtype StringFilter resultType = StringFilter {
+    run :: StringFilterState -> Either Error (StringFilterState, resultType)
+}
+
+
+newtype StringFilterState = StringFilterState {
     input :: String
 } deriving (Show)
 
 
-newtype StringFilter resultType = StringFilter {
-    run :: StringFilterState -> Maybe (StringFilterState, resultType)
-}
+data Error = Err String
+           | NeedMoreInput
+           | NotMatch
+             deriving (Eq, Show)
 
 
-runFilter :: StringFilter resultType -> String -> Maybe (resultType, String)
+type FilterResult resultType = Either Error (resultType, String)
+
+
+runFilter :: StringFilter resultType -> String -> FilterResult resultType
 runFilter packetFilter inputString =
     fmap massage (run packetFilter $ StringFilterState inputString)
     where massage (state, result) = (result, input state)
 
 
 instance Monad StringFilter where
-    return result  = StringFilter (\state -> Just (state, result))
+    return result  = StringFilter (\state -> Right (state, result))
 
-    fail   message = StringFilter (\_ -> Nothing)
+    fail   message = StringFilter (\_     -> Left  (Err message))
 
     filter0 >>= makeFilter1 = StringFilter chainedFilter
         where chainedFilter state0 =
                 case run filter0 state0 of
-                    Just (state1, result) -> run (makeFilter1 result) state1
-                    Nothing               -> Nothing
+                    Right (state1, result) -> run (makeFilter1 result) state1
+                    Left  (Err reason)     -> Left (Err reason)
+                    Left  NeedMoreInput    -> Left NeedMoreInput
+                    Left  NotMatch         -> Left NotMatch
 
 
 instance MonadPlus StringFilter where
-    mzero = StringFilter (\_ -> Nothing)
+    mzero = makeZero NotMatch
 
     mplus filter0 filter1 = StringFilter chainedFilter
         where chainedFilter state0 =
                 case run filter0 state0 of
-                    success@(Just _) -> success
-                    Nothing          -> run filter1 state0
+                    success@(Right _)  -> success
+                    Left (Err reason)  -> Left (Err reason)
+                    Left NeedMoreInput -> Left NeedMoreInput
+                    Left NotMatch      -> run filter1 state0
+
+
+makeZero :: Error -> StringFilter resultType
+makeZero e = StringFilter (\_ -> Left e)
 
 
 getState :: StringFilter StringFilterState
-getState = StringFilter (\state -> Just (state, state))
+getState = StringFilter (\state -> Right (state, state))
 
 
 putState :: StringFilterState -> StringFilter ()
-putState state = StringFilter (\_ -> Just (state, ()))
+putState state = StringFilter (\_ -> Right (state, ()))
 
 
-withInput :: (String -> Maybe (resultType, String)) -> StringFilter resultType
+withInput :: (String -> FilterResult resultType) -> StringFilter resultType
 withInput func =
     getState >>= \state ->
     case func $ input state of
-        Just (result, rest) -> putState state{input=rest} >> return result
-        Nothing             -> mzero
+        Right (result, rest) -> putState state{input=rest} >> return result
+        Left  (Err reason)   -> fail reason
+        Left  NeedMoreInput  -> makeZero NeedMoreInput
+        Left  NotMatch       -> makeZero NotMatch

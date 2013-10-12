@@ -13,9 +13,9 @@ import StringFilter
 
 
 -- Reverse of (:)
-uncons :: String -> Maybe (Char, String)
-uncons (c:cs) = Just (c, cs)
-uncons _      = Nothing
+uncons :: String -> FilterResult Char
+uncons (c:cs) = Right (c, cs)
+uncons _      = Left NeedMoreInput
 
 
 getByte :: StringFilter Char
@@ -24,11 +24,13 @@ getByte = withInput uncons
 
 getPrefix :: (Char -> Bool) -> StringFilter String
 getPrefix pred = withInput $ getPrefix' pred
-    where getPrefix' pred seq =
-            let result@(prefix, _) = span pred seq
+    where getPrefix' pred input =
+            let result@(prefix, _) = span pred input
             in if null prefix
-            then Nothing
-            else Just result
+            then if null input
+                 then Left NeedMoreInput
+                 else Left NotMatch
+            else Right result
 
 
 matchByte :: Char -> StringFilter ()

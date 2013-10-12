@@ -6,6 +6,8 @@ import Data.Char
 
 import Platform (replace)
 
+import StringFilter
+
 import Telnet.Consts
 
 
@@ -67,15 +69,15 @@ quote = replace [rfc854_IAC] [rfc854_IAC, rfc854_IAC]
 -- complete until we see an SE command.
 --
 -- This function also unquotes IACs that are sent as data.
-readUntilIac :: String -> String -> Maybe (String, String)
+readUntilIac :: String -> String -> FilterResult String
 readUntilIac prefix suffix
     | null suffix =
         if null prefix
-        then Nothing
-        else Just (prefix, suffix)
+        then Left  NeedMoreInput
+        else Right (prefix, suffix)
     | otherwise =
         if iacSentAsData == [rfc854_IAC, rfc854_IAC]
         then readUntilIac (prefix ++ prefix' ++ [rfc854_IAC]) suffix''
-        else Just (prefix ++ prefix', suffix')
+        else Right (prefix ++ prefix', suffix')
         where (prefix', suffix')        = span (/= rfc854_IAC) suffix
               (iacSentAsData, suffix'') = splitAt 2 suffix'

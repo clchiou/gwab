@@ -1,6 +1,8 @@
 -- Copyright (C) 2013 Che-Liang Chiou.
 
 module Telnet (
+    StringFilter.Error(Err, NeedMoreInput),
+
     Packet(..),
     parse,
     serialize,
@@ -27,12 +29,12 @@ import Telnet.Internal.Utils
 
 
 -- NOTE: Errors of input are ignored; we shift one left and keep parsing.
-parse :: String -> [Packet]
-parse input@(_:_) =
+parse :: String -> FilterResult Packet
+parse input =
     case runFilter filterTelnet input of
-        Just (packet, rest) -> packet : parse rest
-        Nothing             -> parse $ tail input
-parse _ = []
+        Right (packet, rest) -> Right (packet, rest)
+        Left  (Err reason)   -> Left  (Err reason)
+        Left  NeedMoreInput  -> Left  NeedMoreInput
 
 
 serialize :: Packet -> String

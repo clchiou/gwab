@@ -89,8 +89,17 @@ main = do
 
     runWithSocket host port $ \socket -> do
     threadId <- forkIO $ keyboardInput socket
-    lazyRecvAll socket >>= forever nvt0 socket . parse
+    lazyRecvAll socket >>= forever nvt0 socket . parse'
     killThread threadId
+
+
+parse' :: String -> [Packet]
+parse' str@(_:_) = packet : parse' rest
+    where (packet, rest)               = unpack $ parse str
+          unpack (Right result       ) = result
+          unpack (Left  (Err reason) ) = error reason
+          unpack (Left  NeedMoreInput) = error "Need more input"
+parse' _ = []
 
 
 keyboardInput :: Socket -> IO ()

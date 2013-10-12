@@ -11,6 +11,10 @@ import Telnet.Utils
 
 main :: IO ()
 main = do
+    quickCheck prop_need_more_input
+    quickCheck prop_erroneous_command
+    quickCheck prop_erroneous_subnegotiation
+
     quickCheck prop_identity1
     quickCheck prop_identity2
 
@@ -22,6 +26,41 @@ main = do
 --
 -- Tests of packet parse/serialize
 --
+
+
+prop_need_more_input :: Bool
+prop_need_more_input = all ((Left NeedMoreInput ==) . parse) [
+    "\255",
+    "\255\250",
+    "\255\250\255",
+    "\255\250abc",
+    "\255\250abc\255",
+    "\255\251",
+    "\255\252",
+    "\255\253",
+    "\255\254",
+    ""]
+
+
+prop_erroneous_command :: Bool
+prop_erroneous_command = all test ['\0'..'\239'] where
+    test = isError . parse . ("\255" `sonc`)
+
+
+prop_erroneous_subnegotiation :: Bool
+prop_erroneous_subnegotiation = all (isError . parse) [
+    "\255\250\255\1",
+    "\255\250abc\255\1"]
+
+
+isError result =
+    case result of
+        (Left (Err _)) -> True
+        _              -> False
+
+
+sonc :: String -> Char -> String
+sonc cs c = cs ++ [c]
 
 
 instance Arbitrary Packet where
@@ -43,8 +82,18 @@ instance Arbitrary Packet where
         liftM  PacketText      arbitrary]
 
 
+parse' :: String -> [Packet]
+parse' str@(_:_) = packet : parse' rest
+    where (packet, rest)               = unpack $ parse str
+          unpack (Right result       ) = result
+          unpack (Left  (Err reason) ) = error reason
+          unpack (Left  NeedMoreInput) = error "Need more input"
+parse' _ = []
+
+serialize' :: [Packet] -> String
 serialize' = concat . map serialize
-identity   = serialize' . parse
+
+identity   = serialize' . parse'
 
 
 prop_identity1 :: [Char] -> Bool
