@@ -1,11 +1,23 @@
 // Copyright (C) 2013 Che-Liang Chiou.
 
 
-var socket = chrome.socket || chrome.experimental.socket;
+//// jQuery
 
-// TODO(clchiou): Be sure that chrome.experimental.dns is not removed in
-// future version of Chrome.
-var dns = chrome.experimental.dns;
+
+var js_jquery = $;
+
+
+function jquery_on(events, elements, callback) {
+  elements.on(events, function(event) {
+    A(callback, [[0, event.which], 0]);
+  });
+}
+js_keyup    = jquery_on.bind(window, 'keyup');
+js_keydown  = jquery_on.bind(window, 'keydown');
+js_keypress = jquery_on.bind(window, 'keypress');
+
+
+//// Store
 
 
 var Storage = {};
@@ -23,6 +35,9 @@ var js_putInt    = js_put
 var js_putString = js_put
 
 
+//// Utils
+
+
 function js_setInterval(msecs, callback) {
   return setInterval(function () { A(callback, [0]); }, msecs);
 }
@@ -31,6 +46,16 @@ function js_setInterval(msecs, callback) {
 function js_clearInterval(id) {
   clearInterval(id);
 }
+
+
+//// Socket
+
+
+var socket = chrome.socket || chrome.experimental.socket;
+
+// TODO(clchiou): Be sure that chrome.experimental.dns is not removed in
+// future version of Chrome.
+var dns = chrome.experimental.dns;
 
 
 function js_resolve(host, callback) {

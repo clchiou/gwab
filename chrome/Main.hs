@@ -5,9 +5,11 @@ module Main where
 import Haste
 
 import Control.Monad (when)
+import Data.Char
 
 import Telnet
 
+import JQuery
 import Socket
 import Store
 import Utils
@@ -40,6 +42,13 @@ poll fd = recv fd cb where
                    putString incomingMessage . (++ message))
 
 
+onKeypress :: Int -> Int -> IO ()
+onKeypress fd key = send fd msg cb where
+    msg  = if key' == '\n' then "\r\0" else [key']
+    key' = chr key
+    cb bytes = writeLog $ "input: Send " ++ show bytes ++ " bytes"
+
+
 gwab :: IO ()
 gwab = do
     message <- getString incomingMessage
@@ -66,6 +75,8 @@ onConnect fd resultCode = onConnect' where
         when (fd /= 0) start
 
     start = do
+        j "#target" >>= keypress (onKeypress fd)
+
         putString incomingMessage ""
 
         timerId' <- setInterval 500 periodic
