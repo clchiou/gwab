@@ -53,6 +53,8 @@ import Platform (replace)
 import Telnet
 import Telnet.Utils
 
+import qualified Terminal
+
 
 logFile = unsafePerformIO $ openFile "log" WriteMode
 
@@ -105,15 +107,17 @@ main = do
 
     runWithSocket host port $ \socket -> do
     threadId <- forkIO $ keyboardInput socket
-    lazyRecvAll socket >>= foldM_ (wrapIter socket) nvt0 . parse'
+    lazyRecvAll socket >>= foldM_ (callStep socket) nvt0 . parse'
     killThread threadId
 
 
-wrapIter :: Socket -> (Nvt -> Packet -> IO Nvt)
-wrapIter socket = iter where
-    iter nvt packet = do
-        -- Compute next state and output
+callStep :: Socket -> (Nvt -> Packet -> IO Nvt)
+callStep socket = step' where
+    step' nvt packet = do
+        -- Compute next state with step function
         let (nvt', ps) = step nvt packet
+
+        -- Perform IO associated with state changes
         let triggered  = liftA2 edge nvt nvt'
         case packet of
             PacketText text -> hPutStr stdout text
@@ -131,7 +135,7 @@ wrapIter socket = iter where
         when (triggered /= pure NvtOptNothing)
              (writeLog $ "trig: " ++ show triggered)
 
-        -- Next iteration
+        -- Return new state
         return nvt'
 
 

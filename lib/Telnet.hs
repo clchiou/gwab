@@ -3,13 +3,13 @@
 module Telnet (
     StringFilter.Error(Err, NeedMoreInput),
 
-    Packet(..),
+    Telnet.Consts.Nvt,
+    Telnet.Consts.NvtContext(..),
+    Telnet.Consts.NvtOpt(..),
+    Telnet.Consts.Packet(..),
+
     parse,
     serialize,
-
-    NvtContext(..),
-    NvtOpt(..),
-    Nvt,
     step,
 ) where
 
@@ -29,11 +29,7 @@ import Telnet.Internal.Utils
 
 
 parse :: String -> FilterResult Packet
-parse input =
-    case runFilter filterTelnet input of
-        Right (packet, rest) -> Right (packet, rest)
-        Left  (Err reason)   -> Left  (Err reason)
-        Left  NeedMoreInput  -> Left  NeedMoreInput
+parse = runFilter filterTelnet
 
 
 serialize :: Packet -> String
@@ -59,9 +55,9 @@ serialize (PacketText text)        = quote text
 filterTelnet :: StringFilter Packet
 filterTelnet =
     (matchByte rfc854_IAC >>
-        ( matchByteTable singletons
+        ( matchTable singletons
          `mplus`
-         (matchByteTable negotiations >>= \makepkt ->
+         (matchTable negotiations >>= \makepkt ->
           getByte >>=
           return . makepkt)
          `mplus`

@@ -83,11 +83,13 @@ instance Arbitrary Packet where
 
 
 parse' :: String -> [Packet]
-parse' str@(_:_) = packet : parse' rest
-    where (packet, rest)               = unpack $ parse str
-          unpack (Right result       ) = result
-          unpack (Left  (Err reason) ) = error reason
-          unpack (Left  NeedMoreInput) = error "Need more input"
+
+parse' str@(_:_) = packet : parse' rest where
+    (packet, rest)               = unpack $ parse str
+    unpack (Right result       ) = result
+    unpack (Left  (Err reason) ) = error reason
+    unpack (Left  NeedMoreInput) = error "Need more input"
+
 parse' _ = []
 
 serialize' :: [Packet] -> String

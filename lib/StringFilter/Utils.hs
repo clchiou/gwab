@@ -4,7 +4,9 @@ module StringFilter.Utils (
     getByte,
     getPrefix,
     matchByte,
-    matchByteTable,
+    matchByteRange,
+    matchBytes,
+    matchTable,
 ) where
 
 import Control.Monad
@@ -41,9 +43,25 @@ matchByte expChar =
     else mzero
 
 
-matchByteTable :: [(Char, result)] -> StringFilter result
-matchByteTable table =
+matchByteRange :: Char -> Char -> StringFilter Char
+matchByteRange left right =
+    getByte >>= \c ->
+    if left <= c && c <= right
+    then return c
+    else mzero
+
+
+matchTable :: [(Char, result)] -> StringFilter result
+matchTable table =
     getByte >>= \c ->
     case lookup c table of
         Just result -> return result
         Nothing     -> mzero
+
+
+matchBytes :: [Char] -> StringFilter Char
+matchBytes bytes =
+    getByte >>= \c ->
+    if elem c bytes
+    then return c
+    else mzero
