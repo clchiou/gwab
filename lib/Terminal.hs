@@ -55,13 +55,13 @@ filterSequence :: StringFilter Sequence
 filterSequence =
     -- Multi-character CSI
     (matchByte ansi_ESC >>
-        (-- Two-character sequence
-         (matchByteRange '\64' '\95' >>= \c ->
-          (return $ EscapeSequence2C [ansi_ESC, c]))
-         `mplus`
-         -- Multi-character sequence
+        (-- Multi-character sequence
          (matchByte ansi_CSI >>
           parseEscapeSequence)
+         `mplus`
+         -- Two-character sequence
+         (matchByteRange '\64' '\95' >>= \c ->
+          (return $ EscapeSequence2C [ansi_ESC, c]))
          `mplus`
          (fail $ "Could not parse escape sequence")))
     `mplus`

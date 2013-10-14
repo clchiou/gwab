@@ -53,7 +53,8 @@ import Platform (replace)
 import Telnet
 import Telnet.Utils
 
-import qualified Terminal
+import qualified Terminal (parse)
+import Terminal (Sequence(..))
 
 
 logFile = unsafePerformIO $ openFile "log" WriteMode
@@ -119,15 +120,13 @@ callStep socket = step' where
 
         -- Perform IO associated with state changes
         let triggered  = liftA2 edge nvt nvt'
-        case packet of
-            PacketText text -> hPutStr stdout text
-            otherwise       -> return ()
+        when (isText packet) $ hPutStr stdout (text packet)
         mapM_ (sendPacket socket) ps
         doNvtOpt triggered
 
         -- Debug logs
         case packet of
-            PacketText text -> writeLog $ "text: " ++ show text
+            PacketText text -> mapM_ writeSequence $ parseSequence text
             otherwise       -> writeLog $ "recv: " ++ show packet
         mapM_ (writeLog . ("send: " ++) . show) ps
         when (nvt /= nvt')
@@ -138,6 +137,16 @@ callStep socket = step' where
         -- Return new state
         return nvt'
 
+    isText (PacketText _) = True
+    isText _              = False
+
+    writeSequence (TextSequence     text)    =
+        writeLog $ "text: " ++ show text
+    writeSequence (EscapeSequence2C command) =
+        writeLog $ "e2c : " ++ show command
+    writeSequence escape                     =
+        writeLog $ "esc : " ++ show escape
+
 
 parse' :: String -> [Packet]
 parse' str@(_:_) = packet : parse' rest
@@ -146,6 +155,14 @@ parse' str@(_:_) = packet : parse' rest
           unpack (Left  (Err reason) ) = error reason
           unpack (Left  NeedMoreInput) = error "Need more input"
 parse' _ = []
+
+
+parseSequence :: String -> [Sequence]
+parseSequence str@(_:_) = sequence : parseSequence rest
+    where (sequence, rest)      = unpack $ Terminal.parse str
+          unpack (Right result) = result
+          unpack _              = error "Could not parse text"
+parseSequence _ = []
 
 
 keyboardInput :: Socket -> IO ()

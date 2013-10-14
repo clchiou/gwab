@@ -35,7 +35,7 @@ identity = serialize' . parse'
 
 
 prop_2char_sequence :: Bool
-prop_2char_sequence = all test ['\64'..'\95'] where
+prop_2char_sequence = all test (['\64'..'\90'] ++ ['\92'..'\95']) where
     test c = parse' ['\27', c] == [EscapeSequence2C ['\27', c]]
 
 
@@ -58,7 +58,7 @@ instance Arbitrary Sequence where
         liftM TextSequence $
             listOf $ elements $ ['\0'..'\26'] ++ ['\28'..'\255'],
         liftM EscapeSequence2C $
-            liftM (comb '\27') $ choose ('\64', '\95'),
+            liftM (comb '\27') $ elements $ ['\64'..'\90'] ++ ['\92'..'\95'],
         EscapeSequence                             <$>
             arbitrary                              <*>
             (listOf $ arbitrary `suchThat` (>= 0)) <*>
