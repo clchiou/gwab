@@ -5,7 +5,7 @@ module StringFilter.Utils (
     getPrefix,
     matchByte,
     matchByteRange,
-    matchBytes,
+    matchInt,
     matchTable,
 ) where
 
@@ -51,17 +51,20 @@ matchByteRange left right =
     else mzero
 
 
+matchInt :: StringFilter Int
+matchInt = matchInt' [] where
+    matchInt' digits =
+        (matchByteRange '0' '9' >>= \d ->
+         matchInt' (d:digits))
+        `mplus`
+        (if null digits
+         then mzero
+         else return $ read $ reverse digits)
+
+
 matchTable :: [(Char, result)] -> StringFilter result
 matchTable table =
     getByte >>= \c ->
     case lookup c table of
         Just result -> return result
         Nothing     -> mzero
-
-
-matchBytes :: [Char] -> StringFilter Char
-matchBytes bytes =
-    getByte >>= \c ->
-    if elem c bytes
-    then return c
-    else mzero

@@ -92,10 +92,13 @@ parse' str@(_:_) = packet : parse' rest where
 
 parse' _ = []
 
+
 serialize' :: [Packet] -> String
 serialize' = concat . map serialize
 
-identity   = serialize' . parse'
+
+identity :: String -> String
+identity = serialize' . parse'
 
 
 prop_identity1 :: [Char] -> Bool
