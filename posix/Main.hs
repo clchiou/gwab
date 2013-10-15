@@ -52,9 +52,8 @@ import Platform (replace)
 
 import Telnet
 import Telnet.Utils
-
-import qualified Terminal (parse)
 import Terminal (Sequence(..))
+import qualified Terminal (parse)
 
 
 logFile = unsafePerformIO $ openFile "log" WriteMode

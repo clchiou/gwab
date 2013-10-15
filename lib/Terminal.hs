@@ -9,7 +9,6 @@ module Terminal (
 ) where
 
 import Control.Monad (mplus)
-import Data.List.Utils (join)
 
 import StringFilter
 import StringFilter.Utils
@@ -18,6 +17,7 @@ import StringFilter.Utils
 ansi_ESC = '\27'
 ansi_CSI = '\91'
 ansi_C0  = isRange '\0' '\31'
+ansi_C1  = isRange '\64' '\95'
 
 
 data Sequence = TextSequence String
@@ -49,6 +49,9 @@ serialize escape =
     parameters'    = join ";" $ map show $ parameters escape
     intermediates' = intermediates escape
     letter'        = [letter escape]
+    join sep []     = []
+    join sep [s]    = s
+    join sep (s:ss) = s ++ sep ++ join sep ss
 
 
 -- TODO: Single-character CSI '\155'
@@ -65,14 +68,14 @@ filterSequence =
           parseEscapeSequence)
          `mplus`
          -- C1 control code
-         (matchByte (isRange '\64' '\95') >>= \c ->
+         (matchByte ansi_C1 >>= \c ->
           (return $ ControlCode [ansi_ESC, c]))))
     `mplus`
     -- C0 control code
     (matchByte ansi_C0 >>= \c ->
      (return $ ControlCode [c]))
     `mplus`
-    (getPrefix (/= ansi_ESC) >>=
+    (getPrefix (not . ansi_C0) >>=
      return . TextSequence)
     `mplus`
     (fail $ "Could not parse input sequence")
@@ -87,6 +90,10 @@ parseEscapeSequence =
 
 parseParameter :: Bool -> StringFilter Sequence
 parseParameter privateMode =
+    (matchByte (== ';') >>
+     matchInt >>= \parameter ->
+     parseParameters privateMode [parameter])
+    `mplus`
     (matchInt >>= \parameter ->
      parseParameters privateMode [parameter])
     `mplus`

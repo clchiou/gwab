@@ -8,6 +8,8 @@ import Control.Monad (when)
 import Data.Char
 
 import Telnet
+import Terminal (Sequence(..))
+import qualified Terminal (parse)
 
 import JQuery
 import Socket
@@ -16,11 +18,11 @@ import Utils
 
 
 host :: String
-host = "aardmud.org"
+host = "ptt.cc"
 
 
 port :: Int
-port = 4000
+port = 23
 
 
 timerId :: String
@@ -53,8 +55,13 @@ gwab :: IO ()
 gwab = do
     message <- getString incomingMessage
     when (length message > 0)
-         (mapM_ (writeLog . show) $ parse' message)
+         (mapM_ processPacket $ parse' message)
     putString incomingMessage ""
+
+
+processPacket :: Packet -> IO ()
+processPacket (PacketText text) = mapM_ (writeLog . show) $ parse'' text
+processPacket packet            = writeLog $ show packet
 
 
 parse' :: String -> [Packet]
@@ -64,6 +71,15 @@ parse' str@(_:_) = packet : parse' rest
           unpack (Left  (Err reason) ) = error reason
           unpack (Left  NeedMoreInput) = error "Need more input"
 parse' _ = []
+
+
+parse'' :: String -> [Sequence]
+parse'' str@(_:_) = sequence : parse'' rest
+    where (sequence, rest)             = unpack $ Terminal.parse str
+          unpack (Right result       ) = result
+          unpack (Left  (Err reason) ) = error reason
+          unpack (Left  NeedMoreInput) = error "Need more input"
+parse'' _ = []
 
 
 main = onStartup where

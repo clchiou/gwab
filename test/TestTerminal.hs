@@ -13,6 +13,7 @@ main :: IO ()
 main = do
     quickCheck prop_c0_control_code
     quickCheck prop_c1_control_code
+    quickCheck prop_escape_sequence
     quickCheck prop_text_sequence
     quickCheck prop_identity
 
@@ -44,6 +45,10 @@ prop_c0_control_code = all test ['\0'..'\31'] where
 prop_c1_control_code :: Bool
 prop_c1_control_code = all test (delete '\91' ['\64'..'\95']) where
     test c = parse' ['\27', c] == [ControlCode ['\27', c]]
+
+
+prop_escape_sequence :: Bool
+prop_escape_sequence = (serialize' $ parse' "\ESC[;33m") == "\ESC[33m"
 
 
 prop_text_sequence :: PrintableString -> Bool
