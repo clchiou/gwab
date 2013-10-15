@@ -60,8 +60,14 @@ gwab = do
 
 
 processPacket :: Packet -> IO ()
-processPacket (PacketText text) = mapM_ (writeLog . show) $ parse'' text
+processPacket (PacketText text) = mapM_ processText $ parse'' text
 processPacket packet            = writeLog $ show packet
+
+
+processText :: Sequence -> IO ()
+processText (TextSequence text) = convertEncoding "big5" text
+                                  (writeLog . ("text: " ++))
+processText escape@_            = writeLog $ show escape
 
 
 parse' :: String -> [Packet]

@@ -11,9 +11,9 @@ import Haste
 import Haste.Prim
 
 
-foreign import ccall js_jquery :: JSString -> IO (JQuery)
-foreign import ccall js_keyup :: JQuery -> JSFun (Int -> IO ()) -> IO JQuery
-foreign import ccall js_keydown :: JQuery -> JSFun (Int -> IO ()) -> IO JQuery
+foreign import ccall js_jquery   :: JSString -> IO (JQuery)
+foreign import ccall js_keyup    :: JQuery -> JSFun (Int -> IO ()) -> IO JQuery
+foreign import ccall js_keydown  :: JQuery -> JSFun (Int -> IO ()) -> IO JQuery
 foreign import ccall js_keypress :: JQuery -> JSFun (Int -> IO ()) -> IO JQuery
 
 

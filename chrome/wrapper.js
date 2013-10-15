@@ -38,6 +38,23 @@ var js_putString = js_put
 //// Utils
 
 
+function js_convertEncoding(encoding, str, callback) {
+  var array = new Uint8Array(str.length);
+  for (var i = 0; i < str.length; i++) {
+    array[i] = str.charCodeAt(i);
+  }
+  var fileReader = new FileReader();
+  fileReader.onloadend = function (e) {
+    var blob = new Blob([e.target.result], {type: 'application/octet-binary'});
+    fileReader.onloadend = function (e) {
+      A(callback, [[0, e.target.result], 0]);
+    };
+    fileReader.readAsText(blob, encoding);
+  };
+  fileReader.readAsArrayBuffer(new Blob([array]));
+}
+
+
 function js_setInterval(msecs, callback) {
   return setInterval(function () { A(callback, [0]); }, msecs);
 }
