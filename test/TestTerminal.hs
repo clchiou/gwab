@@ -2,7 +2,8 @@ module TestTerminal where
 
 import Control.Applicative
 import Control.Monad
-import Data.String.Utils
+import Data.Char
+import Data.List
 import Test.QuickCheck
 
 import Terminal
@@ -10,7 +11,8 @@ import Terminal
 
 main :: IO ()
 main = do
-    quickCheck prop_2char_sequence
+    quickCheck prop_c0_control_code
+    quickCheck prop_c1_control_code
     quickCheck prop_text_sequence
     quickCheck prop_identity
 
@@ -34,18 +36,19 @@ identity :: String -> String
 identity = serialize' . parse'
 
 
-prop_2char_sequence :: Bool
-prop_2char_sequence = all test (['\64'..'\90'] ++ ['\92'..'\95']) where
-    test c = parse' ['\27', c] == [EscapeSequence2C ['\27', c]]
+prop_c0_control_code :: Bool
+prop_c0_control_code = all test ['\0'..'\31'] where
+    test c = parse' [c] == [ControlCode [c]]
 
 
-prop_text_sequence :: String -> Bool
-prop_text_sequence str =
-    if null str'
-    then parse' str' == []
-    else parse' str' == [TextSequence str']
-    where str'     = unescape str
-          unescape = replace "\27" ""
+prop_c1_control_code :: Bool
+prop_c1_control_code = all test (delete '\91' ['\64'..'\95']) where
+    test c = parse' ['\27', c] == [ControlCode ['\27', c]]
+
+
+prop_text_sequence :: PrintableString -> Bool
+prop_text_sequence (PrintableString str) =
+    parse' str == [TextSequence str]
 
 
 prop_identity :: [Sequence] -> Bool
@@ -53,15 +56,30 @@ prop_identity ss = identity str == str where
     str = concat $ map serialize ss
 
 
+newtype PrintableString = PrintableString String
+                          deriving (Show)
+
+
+instance Arbitrary PrintableString where
+    arbitrary = fmap PrintableString $
+                listOf1 $ elements ['\0'..'\255'] `suchThat` isPrint
+
+
 instance Arbitrary Sequence where
     arbitrary = oneof [
         liftM TextSequence $
-            listOf $ elements $ ['\0'..'\26'] ++ ['\28'..'\255'],
-        liftM EscapeSequence2C $
-            liftM (comb '\27') $ elements $ ['\64'..'\90'] ++ ['\92'..'\95'],
+            listOf $ elements $ delete '\27' ['\0'..'\255'],
+        liftM ControlCode $
+            liftM (:[]) $ elements ['\0'..'\31'],
+        liftM ControlCode $
+            liftM (('\27':) . singleton) $
+                  elements $ delete '\91' ['\64'..'\95'],
         EscapeSequence                             <$>
             arbitrary                              <*>
             (listOf $ arbitrary `suchThat` (>= 0)) <*>
             (listOf $ choose ('\32', '\47'))       <*>
             choose ('\64', '\126')]
-        where comb a b = a:[b]
+
+
+singleton :: a -> [a]
+singleton a = [a]

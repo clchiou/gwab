@@ -5,6 +5,7 @@ module StringFilter.Utils (
     getPrefix,
     matchByte,
     matchByte',
+    matchEnd,
     matchInt,
 ) where
 
@@ -51,12 +52,10 @@ matchByte' match =
         Nothing     -> mzero
 
 
-matchByteRange :: Char -> Char -> StringFilter Char
-matchByteRange left right =
-    getByte >>= \c ->
-    if left <= c && c <= right
-    then return c
-    else mzero
+matchEnd :: StringFilter ()
+matchEnd = withInput isNull where
+    isNull input | null input = Right ((), input)
+                 | otherwise  = Left  NotMatch
 
 
 matchInt :: StringFilter Int

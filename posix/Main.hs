@@ -142,8 +142,8 @@ callStep socket = step' where
 
     writeSequence (TextSequence     text)    =
         writeLog $ "text: " ++ show text
-    writeSequence (EscapeSequence2C command) =
-        writeLog $ "e2c : " ++ show command
+    writeSequence (ControlCode command) =
+        writeLog $ "cc  : " ++ show command
     writeSequence escape                     =
         writeLog $ "esc : " ++ show escape
 

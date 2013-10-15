@@ -17,6 +17,7 @@ import StringFilter.Utils
 
 ansi_ESC = '\27'
 ansi_CSI = '\91'
+ansi_C0  = isRange '\0' '\31'
 
 
 data Sequence = TextSequence String
@@ -26,7 +27,7 @@ data Sequence = TextSequence String
                     intermediates :: String,
                     letter        :: Char
                 }
-              | EscapeSequence2C String
+              | ControlCode String
                 deriving (Eq, Show)
 
 
@@ -35,8 +36,8 @@ parse = runFilter filterSequence
 
 
 serialize :: Sequence -> String
-serialize (TextSequence     text   ) = text
-serialize (EscapeSequence2C command) = command
+serialize (TextSequence text   ) = text
+serialize (ControlCode  command) = command
 serialize escape =
     [ansi_ESC, ansi_CSI] ++
     privateMode'         ++
@@ -55,18 +56,26 @@ filterSequence :: StringFilter Sequence
 filterSequence =
     -- Multi-character CSI
     (matchByte (== ansi_ESC) >>
-        (-- Multi-character sequence
+        (-- Corner case: C0 control code
+         (matchEnd >>
+          (return $ ControlCode [ansi_ESC]))
+         `mplus`
+         -- Multi-character sequence
          (matchByte (== ansi_CSI) >>
           parseEscapeSequence)
          `mplus`
-         -- Two-character sequence
+         -- C1 control code
          (matchByte (isRange '\64' '\95') >>= \c ->
-          (return $ EscapeSequence2C [ansi_ESC, c]))
-         `mplus`
-         (fail $ "Could not parse escape sequence")))
+          (return $ ControlCode [ansi_ESC, c]))))
+    `mplus`
+    -- C0 control code
+    (matchByte ansi_C0 >>= \c ->
+     (return $ ControlCode [c]))
     `mplus`
     (getPrefix (/= ansi_ESC) >>=
      return . TextSequence)
+    `mplus`
+    (fail $ "Could not parse input sequence")
 
 
 parseEscapeSequence :: StringFilter Sequence
