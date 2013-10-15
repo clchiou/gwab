@@ -54,20 +54,20 @@ serialize (PacketText text)        = quote text
 
 filterTelnet :: StringFilter Packet
 filterTelnet =
-    (matchByte rfc854_IAC >>
-        ( matchTable singletons
+    (matchByte (== rfc854_IAC) >>
+        ( matchByte' (flip lookup singletons)
          `mplus`
-         (matchTable negotiations >>= \makepkt ->
+         (matchByte' (flip lookup negotiations) >>= \makepkt ->
           getByte >>=
           return . makepkt)
          `mplus`
-         (matchByte rfc854_SB >>
+         (matchByte (== rfc854_SB) >>
           readUntilIac' >>= \subopt ->
-          matchByte rfc854_IAC >>
-          matchByte rfc854_SE >>
+          matchByte (== rfc854_IAC) >>
+          matchByte (== rfc854_SE) >>
           (return $ PacketSubOption subopt))
          `mplus`
-         (matchByte rfc854_IAC >>
+         (matchByte (== rfc854_IAC) >>
           (return $ PacketText [rfc854_IAC]))
          `mplus`
          (getByte >>= \c ->

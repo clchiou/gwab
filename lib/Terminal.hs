@@ -54,13 +54,13 @@ serialize escape =
 filterSequence :: StringFilter Sequence
 filterSequence =
     -- Multi-character CSI
-    (matchByte ansi_ESC >>
+    (matchByte (== ansi_ESC) >>
         (-- Multi-character sequence
-         (matchByte ansi_CSI >>
+         (matchByte (== ansi_CSI) >>
           parseEscapeSequence)
          `mplus`
          -- Two-character sequence
-         (matchByteRange '\64' '\95' >>= \c ->
+         (matchByte (isRange '\64' '\95') >>= \c ->
           (return $ EscapeSequence2C [ansi_ESC, c]))
          `mplus`
          (fail $ "Could not parse escape sequence")))
@@ -71,7 +71,7 @@ filterSequence =
 
 parseEscapeSequence :: StringFilter Sequence
 parseEscapeSequence =
-    (matchByte '?' >> parseParameter True)
+    (matchByte (== '?') >> parseParameter True)
     `mplus`
     (parseParameter False)
 
@@ -86,7 +86,7 @@ parseParameter privateMode =
 
 parseParameters :: Bool -> [Int] -> StringFilter Sequence
 parseParameters privateMode parameters =
-    (matchByte ';' >>
+    (matchByte (== ';') >>
      matchInt >>= \parameter ->
      parseParameters privateMode (parameters ++ [parameter]))
     `mplus`
@@ -95,7 +95,7 @@ parseParameters privateMode parameters =
 
 parseIntermediate :: Bool -> [Int] -> String -> StringFilter Sequence
 parseIntermediate privateMode parameters intermediates =
-    (matchByteRange '\32' '\47' >>= \intermediate ->
+    (matchByte (isRange '\32' '\47') >>= \intermediate ->
      parseIntermediate privateMode parameters (intermediates ++ [intermediate]))
     `mplus`
     (parseLetter privateMode parameters intermediates)
@@ -103,9 +103,13 @@ parseIntermediate privateMode parameters intermediates =
 
 parseLetter :: Bool -> [Int] -> String -> StringFilter Sequence
 parseLetter privateMode parameters intermediates =
-    (matchByteRange '\64' '\126' >>= \letter ->
+    (matchByte (isRange '\64' '\126') >>= \letter ->
      return EscapeSequence {
         privateMode   = privateMode,
         parameters    = parameters,
         intermediates = intermediates,
         letter        = letter})
+
+
+isRange :: Char -> Char -> Char -> Bool
+isRange left right c = left <= c && c <= right

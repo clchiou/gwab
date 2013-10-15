@@ -4,12 +4,12 @@ module StringFilter.Utils (
     getByte,
     getPrefix,
     matchByte,
-    matchByteRange,
+    matchByte',
     matchInt,
-    matchTable,
 ) where
 
 import Control.Monad
+import Data.Char
 
 import StringFilter
 
@@ -35,12 +35,20 @@ getPrefix pred = withInput $ getPrefix' pred
             else Right result
 
 
-matchByte :: Char -> StringFilter ()
-matchByte expChar =
+matchByte :: (Char -> Bool) -> StringFilter Char
+matchByte pred =
     getByte >>= \c ->
-    if expChar == c
-    then return ()
+    if pred c
+    then return c
     else mzero
+
+
+matchByte' :: (Char -> Maybe result) -> StringFilter result
+matchByte' match =
+    getByte >>= \c ->
+    case match c of
+        Just result -> return result
+        Nothing     -> mzero
 
 
 matchByteRange :: Char -> Char -> StringFilter Char
@@ -54,17 +62,9 @@ matchByteRange left right =
 matchInt :: StringFilter Int
 matchInt = matchInt' [] where
     matchInt' digits =
-        (matchByteRange '0' '9' >>= \d ->
+        (matchByte isDigit >>= \d ->
          matchInt' (d:digits))
         `mplus`
         (if null digits
          then mzero
          else return $ read $ reverse digits)
-
-
-matchTable :: [(Char, result)] -> StringFilter result
-matchTable table =
-    getByte >>= \c ->
-    case lookup c table of
-        Just result -> return result
-        Nothing     -> mzero
