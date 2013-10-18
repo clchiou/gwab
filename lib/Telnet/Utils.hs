@@ -1,9 +1,11 @@
 -- Copyright (C) 2013 Che-Liang Chiou.
 
 module Telnet.Utils (
-    doNvt,
     edge,
+    sequenceNvt,
 ) where
+
+import Data.Map (toList)
 
 import Telnet
 import Telnet.Internal.Utils
@@ -17,5 +19,5 @@ edge (NvtOptAlways p) opt@(NvtOptAlways q) | p /= q = opt
 edge _                _                             = NvtOptNothing
 
 
-doNvt :: NvtContext (IO ()) -> IO ()
-doNvt = foldl1N (>>)
+sequenceNvt :: NvtContext (IO ()) -> IO ()
+sequenceNvt = sequence_ . map snd . toList . nvtContext

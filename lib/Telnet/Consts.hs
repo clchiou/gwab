@@ -2,6 +2,8 @@
 
 module Telnet.Consts where
 
+import qualified Data.Map as Map (Map, fromList)
+
 
 type CommandCode = Char
 type OptionCode  = Char
@@ -32,6 +34,15 @@ rfc1073_WINDOW_SIZE        = '\31' :: OptionCode
 rfc1091_TERMINAL_TYPE      = '\24' :: OptionCode
 
 
+makeNvtContext :: a -> NvtContext a
+makeNvtContext a = fromList [
+    (rfc856_BINARY_TRANSMISSION, a),
+    (rfc857_ECHO,                a),
+    (rfc858_SUPPRESS_GOAHEAD,    a),
+    (rfc1073_WINDOW_SIZE,        a),
+    (rfc1091_TERMINAL_TYPE,      a)]
+
+
 data Packet = PacketNop
             | PacketDataMark
             | PacketBreak
@@ -58,16 +69,11 @@ data NvtOpt = NvtOptBool   { nvtOptBool   :: Bool       }
               deriving (Eq, Show)
 
 
-type Nvt          = NvtContext NvtOpt
-data NvtContext a = NvtContext {
-    -- RFC-856 Binary Transmission
-    binary     :: a,
-    -- RFC-857 ECHO
-    echo       :: a,
-    -- RFC-858 Suppress GOAHEAD
-    supGoAhead :: a,
-    -- RFC-1073 Window Size
-    windowSize :: a,
-    -- RFC-1091 Terminal Type
-    termType   :: a
-}
+type    Nvt          = NvtContext NvtOpt
+newtype NvtContext a = NvtContext {
+    nvtContext :: Map.Map OptionCode a
+} deriving (Eq)
+
+
+fromList :: [(OptionCode, a)] -> NvtContext a
+fromList = NvtContext . Map.fromList

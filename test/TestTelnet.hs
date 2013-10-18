@@ -2,6 +2,7 @@ module TestTelnet where
 
 import Control.Applicative
 import Control.Monad
+import qualified Data.Map as Map (map)
 import Data.String.Utils
 import Test.QuickCheck
 
@@ -132,31 +133,30 @@ instance Arbitrary NvtOpt where
 
 
 instance Arbitrary a => Arbitrary (NvtContext a) where
-    arbitrary = NvtContext <$> arbitrary <*>
-                               arbitrary <*>
-                               arbitrary <*>
-                               arbitrary <*>
-                               arbitrary
+    arbitrary = fromList <$> listOf1 arbitrary
 
 
 edge' = liftA2 edge
-zero  = pure NvtOptNothing
-alter = liftA alter'
+alter = (alter' <$>)
     where alter' (NvtOptBool   opt) = NvtOptBool $ not opt
           alter' (NvtOptAlways opt) = NvtOptAlways $ not opt
           alter' (NvtOptPair   opt) = NvtOptPair (1 + fst opt, snd opt)
           alter' (NvtOptString opt) = NvtOptString (opt ++ " ")
           alter' NvtOptNothing      = NvtOptNothing
+makeZero (NvtContext table) = NvtContext $ zero where
+    zero = Map.map (\_ -> NvtOptNothing) table
 
 
 prop_absorbing_element :: Nvt -> Bool
 prop_absorbing_element nvt =
     nvt  `edge'` zero == zero &&
     zero `edge'` nvt  == zero
+    where zero = makeZero nvt
 
 
 prop_zero_sum :: Nvt -> Bool
 prop_zero_sum nvt = nvt `edge'` nvt == zero
+    where zero = makeZero nvt
 
 
 prop_edge_trigger :: Nvt -> Bool

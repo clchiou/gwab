@@ -10,6 +10,8 @@ module Terminal (
 
 import Control.Monad (mplus)
 
+import Platform (join)
+
 import StringFilter
 import StringFilter.Utils
 
@@ -51,9 +53,6 @@ serialize escape =
     parameters'    = join ";" $ map show $ parameters escape
     intermediates' = intermediates escape
     letter'        = [letter escape]
-    join sep []     = []
-    join sep [s]    = s
-    join sep (s:ss) = s ++ sep ++ join sep ss
 
 
 -- TODO: Single-character CSI '\155'

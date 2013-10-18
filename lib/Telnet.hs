@@ -7,6 +7,13 @@ module Telnet (
     Telnet.Consts.NvtContext(..),
     Telnet.Consts.NvtOpt(..),
     Telnet.Consts.Packet(..),
+    Telnet.Consts.fromList,
+
+    Telnet.Consts.rfc856_BINARY_TRANSMISSION,
+    Telnet.Consts.rfc857_ECHO,
+    Telnet.Consts.rfc858_SUPPRESS_GOAHEAD,
+    Telnet.Consts.rfc1073_WINDOW_SIZE,
+    Telnet.Consts.rfc1091_TERMINAL_TYPE,
 
     parse,
     serialize,
@@ -15,6 +22,10 @@ module Telnet (
 
 import Control.Applicative
 import Control.Monad
+import Data.Map (intersectionWith, toList)
+import Data.Maybe
+
+import Platform (join)
 
 import StringFilter
 import StringFilter.Utils
@@ -102,104 +113,90 @@ filterTelnet =
 
 
 instance Functor NvtContext where
-    fmap f a = NvtContext {
-        binary     = f $ binary     a,
-        echo       = f $ echo       a,
-        supGoAhead = f $ supGoAhead a,
-        windowSize = f $ windowSize a,
-        termType   = f $ termType   a
-    }
+    fmap f (NvtContext table) = NvtContext $ fmap f table
 
 
 instance Applicative NvtContext where
-    pure v = NvtContext {
-        binary     = v,
-        echo       = v,
-        supGoAhead = v,
-        windowSize = v,
-        termType   = v
-    }
-
-    f <*> a = NvtContext {
-        binary     = binary     f (binary     a),
-        echo       = echo       f (echo       a),
-        supGoAhead = supGoAhead f (supGoAhead a),
-        windowSize = windowSize f (windowSize a),
-        termType   = termType   f (termType   a)
-    }
-
-
-instance Eq a => Eq (NvtContext a) where
-    nvt0 == nvt1 = foldl1N (&&) (liftA2 (==) nvt0 nvt1)
+    pure v = makeNvtContext v
+    (NvtContext f) <*> (NvtContext a) = NvtContext $ intersectionWith ($) f a
 
 
 instance Show a => Show (NvtContext a) where
-    show nvt = "NvtContext {" ++ opts ++ "}"
-        where opts        = foldl1N joinopt opts'
-              opts'       = showopt <$> nvtOptionName <*> nvt
-              showopt n v = n ++ " = " ++ show v
-              joinopt a b = a ++ ", " ++ b
-
-
-nvtOptionName :: NvtContext String
-nvtOptionName  = NvtContext {
-    binary     = "binary",
-    echo       = "echo",
-    supGoAhead = "supGoAhead",
-    windowSize = "windowSize",
-    termType   = "termType"
-}
+    show (NvtContext table) = "NvtContext {" ++ opts ++ "}" where
+        opts  = Platform.join ", " $ map show' $ toList table
+        show' (n, v) = prettyName n ++ " = " ++ show v
+        prettyName n = case lookup n knownOptCodes of
+            (Just name) -> name
+            Nothing     -> show n
+        knownOptCodes =
+            [(rfc856_BINARY_TRANSMISSION, "binary"),
+             (rfc857_ECHO,                "echo"),
+             (rfc858_SUPPRESS_GOAHEAD,    "supGoAhead"),
+             (rfc1073_WINDOW_SIZE,        "windowSize"),
+             (rfc1091_TERMINAL_TYPE,      "termType")]
 
 
 step :: Nvt -> Packet -> (Nvt, [Packet])
-step nvt packet@(PacketWill      _) = negotiate nvt packet True
-step nvt packet@(PacketDo        _) = negotiate nvt packet True
-step nvt packet@(PacketWont      _) = negotiate nvt packet False
-step nvt packet@(PacketDont      _) = negotiate nvt packet False
-step nvt packet@(PacketSubOption _) = subnegotiate nvt packet
+step nvt packet@(PacketWill      _) = negotiate nvt packet
+step nvt packet@(PacketDo        _) = negotiate nvt packet
+step nvt packet@(PacketWont      _) = negotiate nvt packet
+step nvt packet@(PacketDont      _) = negotiate nvt packet
+step nvt packet@(PacketSubOption _) = negotiate nvt packet
 step nvt _                          = (nvt, [])
 
 
-negotiate :: Nvt -> Packet -> Bool -> (Nvt, [Packet])
-negotiate nvt packet newFlag
-    | elem optCode boolOption        = (nvt', packets')
-    | optCode == rfc1073_WINDOW_SIZE = (nvt, packets'')
-    | otherwise                      = (nvt, [nak packet])
-      where
-        optCode            = optionCode packet
+negotiate :: Nvt -> Packet -> (Nvt, [Packet])
+negotiate nvt packet = (nvt', response) where
+    optCode = optionCode packet
+    newFlag = case packet of
+        (PacketWill _) -> True
+        (PacketDo   _) -> True
+        (PacketWont _) -> False
+        (PacketDont _) -> False
 
-        -- Boolean options
-        (nvtOpt', packet') = negotiate' optCode packet newFlag nvtOpt
-        nvt'               = setOpt optCode nvtOpt' nvt
-        packets'           = [packet']
-        nvtOpt             = getOpt optCode nvt
-        boolOption         = [rfc856_BINARY_TRANSMISSION,
-                              rfc857_ECHO,
-                              rfc858_SUPPRESS_GOAHEAD]
+    nvt'       = maybe nvt update' (lookup' optCode newNvtOpts)
+    update' o  = update optCode o nvt
+    newNvtOpts = fromList
+        [(rfc856_BINARY_TRANSMISSION, setBoolOpt newFlag),
+         (rfc857_ECHO,                setBoolOpt newFlag),
+         (rfc858_SUPPRESS_GOAHEAD,    setBoolOpt newFlag),
+         (rfc1073_WINDOW_SIZE,        id),
+         (rfc1091_TERMINAL_TYPE,      id)]
+        <*> nvt
 
-        -- RFC-1073 Window Size
-        packets'' = case windowSize nvt of
-            (NvtOptPair (w, h)) -> [ack packet, naws w h]
-            _                   -> [nak packet]
-
-
-negotiate' :: OptionCode -> Packet -> Bool -> NvtOpt -> (NvtOpt, Packet)
-
-negotiate' optCode packet newFlag (NvtOptBool _) =
-    (NvtOptBool newFlag, ack packet)
-
-negotiate' optCode packet newFlag nvtOpt@(NvtOptAlways flag) =
-    if newFlag == flag
-    then (nvtOpt, ack packet)
-    else (nvtOpt, nak packet)
-
-negotiate' _       packet _       nvtOpt@(NvtOptNothing) =
-    (nvtOpt, nak packet)
+    response  = fromMaybe [] (lookup' optCode response')
+    response' = fromList
+        [(rfc856_BINARY_TRANSMISSION, responseBoolOpt newFlag packet),
+         (rfc857_ECHO,                responseBoolOpt newFlag packet),
+         (rfc858_SUPPRESS_GOAHEAD,    responseBoolOpt newFlag packet),
+         (rfc1073_WINDOW_SIZE,        responseWindowSize packet),
+         (rfc1091_TERMINAL_TYPE,      responseTermType packet)]
+        <*> nvt
 
 
-subnegotiate :: Nvt -> Packet -> (Nvt, [Packet])
-subnegotiate nvt packet
-    | subOption packet /= [rfc1091_TERMINAL_TYPE, '\1'] = (nvt, [])
-    | otherwise                                         =
-        (nvt, [PacketSubOption (rfc1091_TERMINAL_TYPE:'\0':termType')])
-            where termType' = nvtOptString $ termType nvt
+setBoolOpt :: Bool -> NvtOpt -> NvtOpt
+setBoolOpt newFlag        (NvtOptBool   _) = NvtOptBool newFlag
+setBoolOpt _       nvtOpt@(NvtOptAlways _) = nvtOpt
+
+
+responseBoolOpt :: Bool -> Packet -> NvtOpt -> [Packet]
+responseBoolOpt newFlag packet (NvtOptBool   _   )
+    | newFlag         = [ack packet]
+    | otherwise       = [nak packet]
+responseBoolOpt newFlag packet (NvtOptAlways flag)
+    | newFlag == flag = [ack packet]
+    | newFlag /= flag = [nak packet]
+responseBoolOpt _ _ _ = []
+
+
+responseWindowSize :: Packet -> NvtOpt -> [Packet]
+responseWindowSize packet (NvtOptPair (w, h)) = [ack packet, naws w h]
+responseWindowSize _      _                   = []
+
+
+responseTermType :: Packet -> NvtOpt -> [Packet]
+responseTermType (PacketSubOption subOpt) (NvtOptString termType)
+    | subOpt == [rfc1091_TERMINAL_TYPE, '\1'] =
+        [PacketSubOption (rfc1091_TERMINAL_TYPE:'\0':termType)]
+    | otherwise      = []
+responseTermType _ _ = []

@@ -12,10 +12,10 @@ import Data.Array.IArray
 
 
 data Frame = Frame {
-        width  :: Int,
-        height :: Int,
-        buffer :: FrameBuffer
-    } deriving (Eq, Show)
+    width  :: Int,
+    height :: Int,
+    buffer :: FrameBuffer
+} deriving (Eq, Show)
 
 -- TODO(clchiou): Use DiffArray?
 type FrameBuffer = Array Int Line

@@ -3,6 +3,7 @@
 module Telnet.Internal.Utils where
 
 import Data.Char
+import qualified Data.Map as Map (lookup, updateWithKey)
 
 import Platform (replace)
 
@@ -11,43 +12,16 @@ import StringFilter
 import Telnet.Consts
 
 
--- NOTE: If you add fields to NvtContext, DO NOT forget to add it to
--- foldlN and foldl1N also!
-foldlN :: (a -> b -> a) -> a -> NvtContext b -> a
-foldlN f z nvt =
-    z              `f`
-    binary     nvt `f`
-    echo       nvt `f`
-    supGoAhead nvt `f`
-    windowSize nvt `f`
-    termType   nvt
+lookup' :: OptionCode -> NvtContext a -> Maybe a
+lookup' optCode (NvtContext table) = Map.lookup optCode table
 
 
-foldl1N :: (a -> a -> a) -> NvtContext a -> a
-foldl1N f nvt =
-    binary     nvt `f`
-    echo       nvt `f`
-    supGoAhead nvt `f`
-    windowSize nvt `f`
-    termType   nvt
-
-
-getOpt :: OptionCode -> NvtContext a -> a
-getOpt optCode nvt
-    | optCode == rfc856_BINARY_TRANSMISSION = binary     nvt
-    | optCode == rfc857_ECHO                = echo       nvt
-    | optCode == rfc858_SUPPRESS_GOAHEAD    = supGoAhead nvt
-    | optCode == rfc1073_WINDOW_SIZE        = windowSize nvt
-    | optCode == rfc1091_TERMINAL_TYPE      = termType   nvt
-
-
-setOpt :: OptionCode -> a -> NvtContext a -> NvtContext a
-setOpt optCode newOpt nvt
-    | optCode == rfc856_BINARY_TRANSMISSION = nvt{binary    =newOpt}
-    | optCode == rfc857_ECHO                = nvt{echo      =newOpt}
-    | optCode == rfc858_SUPPRESS_GOAHEAD    = nvt{supGoAhead=newOpt}
-    | optCode == rfc1073_WINDOW_SIZE        = nvt{windowSize=newOpt}
-    | optCode == rfc1091_TERMINAL_TYPE      = nvt{termType  =newOpt}
+update :: OptionCode -> a -> NvtContext a -> NvtContext a
+update optCode newValue (NvtContext table) =
+    NvtContext $ Map.updateWithKey update' optCode table
+    where
+    update' optCode' oldValue | optCode == optCode' = Just newValue
+                              | otherwise           = Just oldValue
 
 
 ack :: Packet -> Packet

@@ -65,30 +65,33 @@ writeLog = hPutStrLn logFile
 -- The default value of binary transmission is not RFC's default value, but we
 -- fould it useful in practice.
 nvt0 :: Nvt
-nvt0  = NvtContext {
-    binary     = NvtOptBool True,
-    echo       = NvtOptBool False,
-    windowSize = NvtOptPair (80, 24),
-    termType   = NvtOptString "VT100",
-    supGoAhead = NvtOptAlways True
-}
+nvt0 = fromList
+    [(rfc856_BINARY_TRANSMISSION, NvtOptBool True),
+     (rfc857_ECHO,                NvtOptBool False),
+     (rfc858_SUPPRESS_GOAHEAD,    NvtOptAlways True),
+     (rfc1073_WINDOW_SIZE,        NvtOptPair (80, 24)),
+     (rfc1091_TERMINAL_TYPE,      NvtOptString "VT100")]
 
 
-nvtOptDoer :: NvtContext (NvtOpt -> IO ())
-nvtOptDoer  = NvtContext {
-    binary     = \opt -> hSetBinaryMode stdin  (nvtOptBool opt) >>
-                         hSetBinaryMode stdout (nvtOptBool opt),
-    echo       = hSetEcho stdout . not . nvtOptBool,
-    windowSize = writeLog . ("windowSize: " ++) . show . nvtOptPair,
-    termType   = writeLog . ("termType: "   ++) . nvtOptString,
-    supGoAhead = writeLog . ("supGoAhead: " ++) . show . nvtOptAlways
-}
+doNvtOpt :: NvtContext (NvtOpt -> IO ())
+doNvtOpt = fromList
+    [(rfc856_BINARY_TRANSMISSION,
+      \opt -> hSetBinaryMode stdin  (nvtOptBool opt) >>
+              hSetBinaryMode stdout (nvtOptBool opt)),
+     (rfc857_ECHO,
+      hSetEcho stdout . not . nvtOptBool),
+     (rfc858_SUPPRESS_GOAHEAD,
+      writeLog . ("supGoAhead: " ++) . show . nvtOptAlways),
+     (rfc1073_WINDOW_SIZE,
+      writeLog . ("windowSize: " ++) . show . nvtOptPair),
+     (rfc1091_TERMINAL_TYPE,
+      writeLog . ("termType: "   ++) . nvtOptString)]
 
 
-doNvtOpt :: Nvt -> IO ()
-doNvtOpt nvt = doNvt $ liftA2 (maybe' (return())) nvtOptDoer nvt
-    where maybe' zero doer opt =
-            if opt /= NvtOptNothing then doer opt else zero
+doNvt :: Nvt -> IO ()
+doNvt nvt = sequenceNvt (applyNvtOpt <$> doNvtOpt <*> nvt) where
+    applyNvtOpt f NvtOptNothing = return ()
+    applyNvtOpt f nvtOpt        = f nvtOpt
 
 
 main :: IO ()
@@ -100,7 +103,7 @@ main = do
     hSetBuffering logFile NoBuffering
 
     writeLog $ "nvt0: " ++ show nvt0
-    doNvtOpt nvt0
+    doNvt nvt0
 
     hSetBuffering stdin  NoBuffering
     hSetBuffering stdout NoBuffering
@@ -121,7 +124,7 @@ callStep socket = step' where
         let triggered  = liftA2 edge nvt nvt'
         when (isText packet) $ hPutStr stdout (text packet)
         mapM_ (sendPacket socket) ps
-        doNvtOpt triggered
+        doNvt triggered
 
         -- Debug logs
         case packet of
