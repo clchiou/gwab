@@ -13,6 +13,8 @@ import Control.Monad (mplus)
 import StringFilter
 import StringFilter.Utils
 
+import Screen
+
 
 ansi_ESC = '\27'
 ansi_CSI = '\91'
