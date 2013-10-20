@@ -2,19 +2,26 @@
 
 module Screen (
     Frame(..),
+
     frame,
     clear,
+
     append,
+    write,
     update,
+
+    toStrings,
 ) where
 
 import Data.Array.IArray
 
+import Platform (join)
+
 
 data Frame = Frame {
-    width  :: Int,
-    height :: Int,
-    buffer :: FrameBuffer
+    dimension :: (Int, Int),
+    cursor    :: (Int, Int),
+    buffer    :: FrameBuffer
 } deriving (Eq, Show)
 
 -- TODO(clchiou): Use DiffArray?
@@ -23,8 +30,11 @@ type Line = Array Int Char
 
 
 frame :: Int -> Int -> Frame
-frame w h = Frame{width=w, height=h, buffer=listArray (1, h) lines}
-    where lines = repeat $ listArray (1, w) $ repeat '\0'
+frame w h = Frame {
+        dimension = (w, h),
+        cursor    = (1, 1),
+        buffer    = listArray (1, h) lines
+    } where lines = repeat $ listArray (1, w) $ repeat '\0'
 
 
 clear :: Frame -> Frame
@@ -32,9 +42,26 @@ clear = uncurry frame . bounds . buffer
 
 
 append :: String -> Frame -> Frame
-append str f@(Frame w h _) = f{buffer=b''} where
-    b'   = ixmap (1, h) (\j -> j `mod` h + 1) $ buffer f
-    b''  = b' // [(h, toLine w str)]
+append str fr@(Frame _ (x, y) _) = write x y str fr
+
+
+write :: Int -> Int -> String -> Frame -> Frame
+
+write x y [] fr = fr{cursor=(x, y)}
+
+write x y str fr@(Frame (w, h) _ buf)
+    | x + length str < w + 1 =
+        fr{cursor=(x + length str, y), buffer=write' x y str buf}
+    | otherwise =
+        write 1 y' rest fr{buffer=write' x y str' buf}
+    where
+    y' = y `mod` h + 1
+    (str', rest) = splitAt (w - x + 1) str
+
+
+write' :: Int -> Int -> String -> FrameBuffer -> FrameBuffer
+write' x y str buf = buf // [(y, line)] where
+    line = buf ! y // zip (iterate (+1) x) str
 
 
 update :: Int -> Int -> Char -> Frame -> Frame
@@ -43,5 +70,5 @@ update x y c f = f{buffer=buffer'} where
     line'   = buffer f ! y // [(x, c)]
 
 
-toLine :: Int -> String -> Line
-toLine w str = listArray (1, w) str
+toStrings :: Frame -> [String]
+toStrings fr = map elems $ elems $ buffer fr
