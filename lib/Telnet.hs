@@ -137,12 +137,15 @@ instance Show a => Show (NvtContext a) where
 
 
 step :: Nvt -> Packet -> (Nvt, [Packet])
+
 step nvt packet@(PacketWill      _) = negotiate nvt packet
 step nvt packet@(PacketDo        _) = negotiate nvt packet
 step nvt packet@(PacketWont      _) = negotiate nvt packet
 step nvt packet@(PacketDont      _) = negotiate nvt packet
-step nvt packet@(PacketSubOption _) = negotiate nvt packet
-step nvt _                          = (nvt, [])
+
+step nvt (PacketSubOption subOpt) = subnegotiate nvt subOpt
+
+step nvt _ = (nvt, [])
 
 
 negotiate :: Nvt -> Packet -> (Nvt, [Packet])
@@ -154,7 +157,7 @@ negotiate nvt packet = (nvt', response) where
         (PacketWont _) -> False
         (PacketDont _) -> False
 
-    nvt'       = maybe nvt update' (lookup' optCode newNvtOpts)
+    nvt'       = maybe nvt update' (lookupNvt optCode newNvtOpts)
     update' o  = update optCode o nvt
     newNvtOpts = fromList
         [(rfc856_BINARY_TRANSMISSION, setBoolOpt newFlag),
@@ -164,14 +167,25 @@ negotiate nvt packet = (nvt', response) where
          (rfc1091_TERMINAL_TYPE,      id)]
         <*> nvt
 
-    response  = fromMaybe [] (lookup' optCode response')
+    response  = fromMaybe [] (lookupNvt optCode response')
     response' = fromList
-        [(rfc856_BINARY_TRANSMISSION, responseBoolOpt newFlag packet),
-         (rfc857_ECHO,                responseBoolOpt newFlag packet),
-         (rfc858_SUPPRESS_GOAHEAD,    responseBoolOpt newFlag packet),
-         (rfc1073_WINDOW_SIZE,        responseWindowSize packet),
-         (rfc1091_TERMINAL_TYPE,      responseTermType packet)]
+        [(rfc856_BINARY_TRANSMISSION, respAckOrNak newFlag packet),
+         (rfc857_ECHO,                respAckOrNak newFlag packet),
+         (rfc858_SUPPRESS_GOAHEAD,    respAckOrNak newFlag packet),
+         (rfc1073_WINDOW_SIZE,        responseWindowSize newFlag packet),
+         (rfc1091_TERMINAL_TYPE,      respAckOrNak newFlag packet)]
         <*> nvt
+
+
+subnegotiate :: Nvt -> String -> (Nvt, [Packet])
+subnegotiate nvt subOpt
+    | subOpt == [rfc1091_TERMINAL_TYPE, '\1'] =
+        case lookupNvt rfc1091_TERMINAL_TYPE nvt of
+            Just (NvtOptString termType) -> (nvt, respTt termType)
+            Nothing -> (nvt, [])
+    | otherwise      = (nvt, [])
+    where
+    respTt termType = [PacketSubOption (rfc1091_TERMINAL_TYPE:'\0':termType)]
 
 
 setBoolOpt :: Bool -> NvtOpt -> NvtOpt
@@ -179,24 +193,20 @@ setBoolOpt newFlag        (NvtOptBool   _) = NvtOptBool newFlag
 setBoolOpt _       nvtOpt@(NvtOptAlways _) = nvtOpt
 
 
-responseBoolOpt :: Bool -> Packet -> NvtOpt -> [Packet]
-responseBoolOpt newFlag packet (NvtOptBool   _   )
+respAckOrNak :: Bool -> Packet -> NvtOpt -> [Packet]
+respAckOrNak newFlag packet (NvtOptBool   _   )
     | newFlag         = [ack packet]
     | otherwise       = [nak packet]
-responseBoolOpt newFlag packet (NvtOptAlways flag)
+respAckOrNak newFlag packet (NvtOptString _   )
+    | newFlag         = [ack packet]
+    | otherwise       = [nak packet]
+respAckOrNak newFlag packet (NvtOptAlways flag)
     | newFlag == flag = [ack packet]
     | newFlag /= flag = [nak packet]
-responseBoolOpt _ _ _ = []
 
 
-responseWindowSize :: Packet -> NvtOpt -> [Packet]
-responseWindowSize packet (NvtOptPair (w, h)) = [ack packet, naws w h]
-responseWindowSize _      _                   = []
-
-
-responseTermType :: Packet -> NvtOpt -> [Packet]
-responseTermType (PacketSubOption subOpt) (NvtOptString termType)
-    | subOpt == [rfc1091_TERMINAL_TYPE, '\1'] =
-        [PacketSubOption (rfc1091_TERMINAL_TYPE:'\0':termType)]
-    | otherwise      = []
-responseTermType _ _ = []
+responseWindowSize :: Bool -> Packet -> NvtOpt -> [Packet]
+responseWindowSize newFlag packet (NvtOptPair (w, h))
+    | newFlag   = [ack packet, naws w h]
+    | otherwise = [ack packet]
+responseWindowSize _ _ _ = []

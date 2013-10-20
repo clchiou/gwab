@@ -12,8 +12,8 @@ import StringFilter
 import Telnet.Consts
 
 
-lookup' :: OptionCode -> NvtContext a -> Maybe a
-lookup' optCode (NvtContext table) = Map.lookup optCode table
+lookupNvt :: OptionCode -> NvtContext a -> Maybe a
+lookupNvt optCode (NvtContext table) = Map.lookup optCode table
 
 
 update :: OptionCode -> a -> NvtContext a -> NvtContext a

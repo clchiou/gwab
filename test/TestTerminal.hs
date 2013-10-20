@@ -67,7 +67,7 @@ newtype PrintableString = PrintableString String
 
 instance Arbitrary PrintableString where
     arbitrary = fmap PrintableString $
-                listOf1 $ elements ['\0'..'\255'] `suchThat` isPrint
+                listOf1 $ elements $ filter isPrint ['\0'..'\255']
 
 
 instance Arbitrary Sequence where

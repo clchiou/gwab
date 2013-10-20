@@ -1,6 +1,8 @@
 -- Copyright (C) 2013 Che-Liang Chiou.
 
 module Telnet.Utils (
+    Telnet.Internal.Utils.update,
+
     edge,
     sequenceNvt,
 ) where
