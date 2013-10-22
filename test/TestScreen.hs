@@ -27,13 +27,13 @@ prop_append =
     toStrings (append "hello worl"  fr) == ["wor",   "l\0\0"]  &&
     toStrings (append "hello world" fr) == ["wor",   "ld\0"]   &&
 
-    toStrings (append "hello world " fr) == ["wor", "ld "] &&
-    toStrings (append "hello world x" fr) == ["ld ", "x\0\0"] &&
-    toStrings (append "hello world xy" fr) == ["ld ", "xy\0"] &&
-    toStrings (append "hello world xyz" fr) == ["ld ", "xyz"] &&
-    toStrings (append "hello world xyz " fr) == ["xyz", " \0\0"] &&
-    toStrings (append "hello world xyz u" fr) == ["xyz", " u\0"] &&
-    toStrings (append "hello world xyz uv" fr) == ["xyz", " uv"] &&
+    toStrings (append "hello world "        fr) == ["wor", "ld "]   &&
+    toStrings (append "hello world x"       fr) == ["ld ", "x\0\0"] &&
+    toStrings (append "hello world xy"      fr) == ["ld ", "xy\0"]  &&
+    toStrings (append "hello world xyz"     fr) == ["ld ", "xyz"]   &&
+    toStrings (append "hello world xyz "    fr) == ["xyz", " \0\0"] &&
+    toStrings (append "hello world xyz u"   fr) == ["xyz", " u\0"]  &&
+    toStrings (append "hello world xyz uv"  fr) == ["xyz", " uv"]   &&
     toStrings (append "hello world xyz uvw" fr) == [" uv", "w\0\0"] &&
 
     toStringsAll (append "hello world" fr) ==

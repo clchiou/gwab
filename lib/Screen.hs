@@ -28,8 +28,13 @@ data Frame = Frame {
 } deriving (Eq, Show)
 
 -- TODO(clchiou): Use DiffArray?
-type FrameBuffer = Array Int Line
-type Line = Array Int Char
+type FrameBuffer = Array Int FrameLine
+type FrameLine   = Array Int Dot
+
+data Dot = DotChar Char
+         | DotSpan
+         | DotEmpty
+           deriving (Eq, Show)
 
 
 frame :: Int -> Int -> Int -> Frame
@@ -37,7 +42,7 @@ frame w h l = Frame {
         dimension = (w, h, l),
         cursor    = (1, 1, 0),
         buffer    = listArray (1, l) lines
-    } where lines = repeat (emptyLine w)
+    } where lines = repeat (frameLine w)
 
 
 goto :: Int -> Int -> Frame -> Frame
@@ -84,27 +89,43 @@ write x y str fr@(Frame (w, h, l) (_, _, s) buf)
 
 write' :: Int -> Int -> String -> FrameBuffer -> FrameBuffer
 write' x y str buf = buf // [(y, line)] where
-    line = buf ! y // zip (iterate (+1) x) str
+    line = buf ! y // zip (iterate (+1) x) (map fromChar str)
 
 
 scroll1 :: Int -> Int -> FrameBuffer -> FrameBuffer
-scroll1 w l buf = ixmap (1, l) (\j -> j `mod` l + 1) buf // [(l, emptyLine w)]
+scroll1 w l buf = ixmap (1, l) (\j -> j `mod` l + 1) buf // [(l, frameLine w)]
 
 
 update :: Int -> Int -> Char -> Frame -> Frame
 update x y c fr@(Frame _ (_, _, s) buf) = fr{buffer=buf'} where
     buf'  = buf // [(s + y, line')]
-    line' = buf ! (s + y) // [(x, c)]
+    line' = buf ! (s + y) // [(x, fromChar c)]
 
 
-emptyLine :: Int -> Line
-emptyLine w = listArray (1, w) $ repeat '\0'
+frameLine :: Int -> FrameLine
+frameLine w = listArray (1, w) $ repeat DotEmpty
+
+
+fromChar :: Char -> Dot
+fromChar = DotChar
 
 
 toStrings :: Frame -> [String]
 toStrings fr@(Frame (w, h, _) (_, _, s) buf) =
-    map elems $ map (buf !) [(s + 1) .. (s + h)]
+    map toString $ map (buf !) [(s + 1) .. (s + h)]
 
 
 toStringsAll :: Frame -> [String]
-toStringsAll fr = map elems $ elems $ buffer fr
+toStringsAll = map toString . elems . buffer
+
+
+toString :: FrameLine -> String
+toString = map toChar . filter (not . isDotSpan) . elems where
+    isDotSpan DotSpan = True
+    isDotSpan _       = False
+
+
+toChar :: Dot -> Char
+toChar (DotChar c) = c
+toChar DotSpan     = '\0'
+toChar DotEmpty    = '\0'
