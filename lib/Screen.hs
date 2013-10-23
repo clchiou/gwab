@@ -12,6 +12,7 @@ module Screen (
     write,
     update,
 
+    -- Exported for testing purposes
     toStrings,
     toStringsAll,
 ) where
@@ -19,6 +20,8 @@ module Screen (
 import Data.Array.IArray
 
 import Platform (join)
+
+import Screen.Utils
 
 
 data Frame = Frame {
@@ -69,27 +72,31 @@ append str fr@(Frame _ (x, y, _) _) = write x y str fr
 
 
 write :: Int -> Int -> String -> Frame -> Frame
+write x y str fr = write' x y (fromString str) fr
 
-write x y [] fr = goto x y fr
 
-write x y str fr@(Frame (w, h, l) (_, _, s) buf)
-    | x + length str <= w + 1 =
-        fr{cursor=(x + length str, y, s), buffer=write' x (s + y) str buf}
+-- TODO(clchiou): Handle case that CJK code point span over line boundary
+write' :: Int -> Int -> [Dot] -> Frame -> Frame
+write' x y [] fr = goto x y fr
+write' x y dots fr@(Frame (w, h, l) (_, _, s) buf)
+    | x + length dots <= w + 1 =
+        fr{cursor=(x + length dots, y, s),
+           buffer=writeBuffer x (s + y) dots buf}
     | y < h =
-        write 1 (y + 1) rest fr{buffer=buf'}
+        write' 1 (y + 1) rest fr{buffer=buf'}
     | s + h < l =
-        write 1 y rest fr{cursor=(x, y, s + 1), buffer=buf'}
+        write' 1 y rest fr{cursor=(x, y, s + 1), buffer=buf'}
     | otherwise =
-        write 1 y rest fr{buffer=buf''}
+        write' 1 y rest fr{buffer=buf''}
     where
-    (str', rest) = splitAt (w - x + 1) str
-    buf'  = write' x (s + y) str' buf
+    (dots', rest) = splitAt (w - x + 1) dots
+    buf'  = writeBuffer x (s + y) dots' buf
     buf'' = scroll1 w l buf'
 
 
-write' :: Int -> Int -> String -> FrameBuffer -> FrameBuffer
-write' x y str buf = buf // [(y, line)] where
-    line = buf ! y // zip (iterate (+1) x) (map fromChar str)
+writeBuffer :: Int -> Int -> [Dot] -> FrameBuffer -> FrameBuffer
+writeBuffer x y dots buf = buf // [(y, line)] where
+    line = buf ! y // zip (iterate (+1) x) dots
 
 
 scroll1 :: Int -> Int -> FrameBuffer -> FrameBuffer
@@ -110,13 +117,17 @@ fromChar :: Char -> Dot
 fromChar = DotChar
 
 
-toStrings :: Frame -> [String]
-toStrings fr@(Frame (w, h, _) (_, _, s) buf) =
-    map toString $ map (buf !) [(s + 1) .. (s + h)]
+fromString :: String -> [Dot]
+fromString (c:cs)
+    | isCjkCodePoint c = [DotChar c, DotSpan] ++ fromString cs
+    | otherwise        = DotChar c : fromString cs
+fromString _           = []
 
 
-toStringsAll :: Frame -> [String]
-toStringsAll = map toString . elems . buffer
+toChar :: Dot -> Char
+toChar (DotChar c) = c
+toChar DotSpan     = '\0'
+toChar DotEmpty    = '\0'
 
 
 toString :: FrameLine -> String
@@ -125,7 +136,10 @@ toString = map toChar . filter (not . isDotSpan) . elems where
     isDotSpan _       = False
 
 
-toChar :: Dot -> Char
-toChar (DotChar c) = c
-toChar DotSpan     = '\0'
-toChar DotEmpty    = '\0'
+toStrings :: Frame -> [String]
+toStrings fr@(Frame (w, h, _) (_, _, s) buf) =
+    map toString $ map (buf !) [(s + 1) .. (s + h)]
+
+
+toStringsAll :: Frame -> [String]
+toStringsAll = map toString . elems . buffer
