@@ -76,6 +76,7 @@ write x y str fr = write' x y (fromString str) fr
 
 
 -- TODO(clchiou): Handle case that CJK code point span over line boundary
+-- TODO(clchiou): Handle TAB character
 write' :: Int -> Int -> [Dot] -> Frame -> Frame
 write' x y [] fr = goto x y fr
 write' x y dots fr@(Frame (w, h, l) (_, _, s) buf)

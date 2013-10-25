@@ -3,6 +3,8 @@
 module Terminal (
     StringFilter.Error(Err, NeedMoreInput),
 
+    Screen.Frame(..),
+
     Sequence(..),
     parse,
     serialize,

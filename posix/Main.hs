@@ -55,6 +55,8 @@ import Telnet.Utils
 import Terminal (Sequence(..))
 import qualified Terminal (parse)
 
+import qualified Gwab
+
 
 logFile = unsafePerformIO $ openFile "log" WriteMode
 
